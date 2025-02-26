@@ -1,6 +1,14 @@
 import cv2
 import numpy as np
 
+# Ask the user for the camera index
+cam_index = int(input("Enter camera index (default is 1): ") or 1)
+cap = cv2.VideoCapture(cam_index)
+
+if not cap.isOpened():
+    print(f"Error: Could not open camera {cam_index}")
+    exit()
+
 # Global variables
 points = []
 capturing = False
@@ -15,10 +23,7 @@ def get_points(event, x, y, flags, param):
         if len(points) == 4:
             capturing = True  # Start processing frames
 
-# Open the webcam
-cap = cv2.VideoCapture(0)  # Use 0 for default webcam, or replace with video file path
-
-# Wait for the first frame to select points
+# Capture the first frame to select points
 ret, frame = cap.read()
 if not ret:
     print("Error: Could not capture video.")
@@ -32,7 +37,10 @@ cv2.setMouseCallback("Select 4 Points", get_points)
 while not capturing:
     cv2.imshow("Select 4 Points", frame)
     if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
+        print("Selection canceled.")
+        cap.release()
+        cv2.destroyAllWindows()
+        exit()
 
 cv2.destroyAllWindows()  # Close the selection window
 
@@ -54,8 +62,9 @@ H = cv2.getPerspectiveTransform(src_points, dst_points)
 # Process the video feed
 while True:
     ret, frame = cap.read()
-    if not ret:5
-    break
+    if not ret:
+        print("Error: Could not read frame.")
+        break
 
     # Apply perspective warp
     warped = cv2.warpPerspective(frame, H, (width, height))
