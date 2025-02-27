@@ -124,7 +124,7 @@ def main():
             print("Error: Could not read frame")
             break
 
-        size_val = cv2.getTrackbarPos("Cell Size", "Maze Setup with Grid")
+        size_val = max(cv2.getTrackbarPos("Cell Size", "Maze Setup with Grid"), 1)
         # Draw the grid and coordinates if corners are set
         draw_grid_and_coordinates(frame, maze, max_cell_size=size_val)  # Scale grid to fit maze
 
