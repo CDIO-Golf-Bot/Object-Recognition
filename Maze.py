@@ -113,6 +113,9 @@ def main():
     # Set mouse callback for user input
     cv2.namedWindow("Maze Setup with Grid")
     cv2.setMouseCallback("Maze Setup with Grid", mouse_callback)
+    
+    initial_size = 30
+    cv2.createTrackbar("Cell Size", "Maze Setup with Grid", initial_size, 100, lambda x: None)  # Dummy function
 
     while True:
         ret, frame = cap.read()
@@ -121,8 +124,9 @@ def main():
             print("Error: Could not read frame")
             break
 
+        size_val = cv2.getTrackbarPos("Cell Size", "Maze Setup with Grid")
         # Draw the grid and coordinates if corners are set
-        draw_grid_and_coordinates(frame, maze, max_cell_size=30)  # Scale grid to fit maze
+        draw_grid_and_coordinates(frame, maze, max_cell_size=size_val)  # Scale grid to fit maze
 
         # Show the frame with the maze and grid coordinates
         cv2.imshow("Maze Setup with Grid", frame)
