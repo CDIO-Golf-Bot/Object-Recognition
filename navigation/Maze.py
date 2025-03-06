@@ -3,7 +3,7 @@ import numpy as np
 from navigation.Point import Point
 
 class Maze:
-    def __init__(self, topLeft=None, topRight=None, botLeft=None, botRight=None, gridSize=(10, 10)): # can change gridize
+    def __init__(self, topLeft=None, topRight=None, botLeft=None, botRight=None, gridSize=(10, 10)):  # can change gridSize
         self.topLeft = topLeft
         self.topRight = topRight
         self.botLeft = botLeft
@@ -114,7 +114,8 @@ class Maze:
                     
                     
     def get_point(self, grid_x, grid_y):
-        return self.grid_points.get((grid_x, grid_y))
+        """Get the pixel coordinates for a given grid point."""
+        return self.grid_to_pixel(grid_x, grid_y)
 
     def set_point(self, grid_x, grid_y, point):
         self.grid_points[(grid_x, grid_y)] = point
@@ -158,6 +159,11 @@ def main():
         if maze.topLeft and maze.botRight and not maze_initialized:
             maze_initialized = True
             maze.print_grid_points()  # Print all grid points
+
+            # Example: Get pixel coordinates for a specific grid point
+            grid_x, grid_y = 5, 5  # Example grid point
+            pixel_x, pixel_y = maze.get_point(grid_x, grid_y)
+            print(f"Pixel coordinates for grid ({grid_x}, {grid_y}): ({pixel_x}, {pixel_y})")
 
         # Show the frame with the maze and grid coordinates
         cv2.imshow("Maze Setup with Grid", frame)
