@@ -16,7 +16,7 @@ def get_points(event, x, y, flags, param):
             capturing = True  # Start processing frames
 
 # Open the webcam
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)
 if not cap.isOpened():
     print("Error: Could not access the camera.")
     exit()
@@ -43,7 +43,7 @@ cv2.destroyAllWindows()  # Close the selection window
 src_points = np.array(points, dtype=np.float32)
 
 # Define the four corresponding points in the transformed (top-down) view
-width, height = 400, 600  # Adjust output size
+width, height = 400, 400  # Adjust output size
 dst_points = np.array([
     [0, 0],
     [width, 0],
@@ -60,8 +60,8 @@ class ObjectDetection:
         print("Loading Object Detection")
         print("Running OpenCV DNN with YOLOv4")
         self.nmsThreshold = 0.5
-        self.confThreshold = 0.6
-        self.image_size = 416  # Instead of 608
+        self.confThreshold = 0.3
+        self.image_size = 320  # Instead of 608
         
 
         try:

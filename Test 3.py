@@ -2,8 +2,8 @@ import cv2
 import numpy as np
 
 class ObjectDetection:
-    def __init__(self, weights_path="C:/Users/balde/Desktop/Code/yolo/yolov4.weights", 
-                 cfg_path="C:/Users/balde/Desktop/Code/yolo/yolov4.cfg"):
+    def __init__(self, weights_path="C:/Users/balde/Desktop/Code/yolo/yolov4-tiny.weights", 
+                 cfg_path="C:/Users/balde/Desktop/Code/yolo/yolov4-tiny.cfg"):
         print("Loading Object Detection")
         print("Running OpenCV DNN with YOLOv4-tiny")
         self.nmsThreshold = 0.5
