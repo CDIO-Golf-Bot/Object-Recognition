@@ -16,7 +16,7 @@ def get_points(event, x, y, flags, param):
             capturing = True  # Start processing frames
 
 # Open the webcam
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)
 if not cap.isOpened():
     print("Error: Could not access the camera.")
     exit()
@@ -56,13 +56,15 @@ H = cv2.getPerspectiveTransform(src_points, dst_points)
 
 # Object Detection Class
 class ObjectDetection:
-    def __init__(self, weights_path="C:/Users/balde/Desktop/yolo/yolov4-tiny.weights", cfg_path="C:/Users/balde/Desktop/yolo/yolov4-tiny.cfg", classes_path="C:/Users/balde/Desktop/yolo/coco.names"):
+    def __init__(self, 
+                 weights_path="C:/Users/balde/Desktop/yolo/yolov4-tiny.weights", 
+                 cfg_path="C:/Users/balde/Desktop/yolo/yolov4-tiny.cfg", 
+                 classes_path="C:/Users/balde/Desktop/yolo/coco.names"):
         print("Loading Object Detection")
-        print("Running OpenCV DNN with YOLOv4")
-        self.nmsThreshold = 0.5
-        self.confThreshold = 0.6
-        self.image_size = 416  # Instead of 608
-        
+        print("Running OpenCV DNN with YOLOv4-Tiny")
+        self.nmsThreshold = 0.5  # Non-Maximum Suppression Threshold
+        self.confThreshold = 0.4  # Confidence Threshold
+        self.image_size = 416  # YOLOv4-Tiny works best with 416x416
 
         try:
             net = cv2.dnn.readNet(weights_path, cfg_path)
@@ -83,34 +85,28 @@ class ObjectDetection:
     def load_class_names(self, classes_path):
         try:
             with open(classes_path, "r") as file_object:
-                for class_name in file_object.readlines():
-                    self.classes.append(class_name.strip())
+                self.classes = [class_name.strip() for class_name in file_object.readlines()]
             print(f"Loaded {len(self.classes)} class names.")
         except Exception as e:
             print(f"Error loading class names: {e}")
 
     def detect(self, frame):
-        if self.model is None:  # Prevent calling detect if model failed to load
+        if self.model is None:  
             print("Error: Model is not loaded. Cannot perform detection.")
             return [], [], []
 
-        classes, confidences, boxes = self.model.detect(frame, nmsThreshold=self.nmsThreshold, confThreshold=self.confThreshold)
-        
-        filtered_classes = []
-        filtered_confidences = []
-        filtered_boxes = []
-        
-        for class_id, confidence, box in zip(classes, confidences, boxes):
-            label = self.classes[class_id]  # Get the class name
-            
-            if label in ["sports ball", "car"]:  # Only keep ping pong balls and cars
-                filtered_classes.append(class_id)
-                filtered_confidences.append(confidence)
-                filtered_boxes.append(box)
+        # Perform detection
+        detections = self.model.detect(frame, nmsThreshold=self.nmsThreshold, confThreshold=self.confThreshold)
 
-        return filtered_classes, filtered_confidences, filtered_boxes
+        if len(detections) == 3:  # Ensure we have the correct structure
+            classes, confidences, boxes = detections
+        else:
+            print("Detection returned unexpected structure. Skipping frame.")
+            return [], [], []
 
-# Initialize Object Detection
+        return list(classes), list(confidences), list(boxes)  # Convert to lists
+
+# ✅ Move initialization OUTSIDE the class
 object_detector = ObjectDetection()
 
 # Process the video feed
@@ -125,12 +121,13 @@ while True:
     # Detect objects in the transformed frame
     classes, confidences, boxes = object_detector.detect(warped)
 
-    # Draw bounding boxes
+    # Draw bounding boxes for all detected objects
     for class_id, confidence, box in zip(classes, confidences, boxes):
         color = object_detector.colors[class_id]
-        label = object_detector.classes[class_id]
+        label = object_detector.classes[class_id]  # Get object name
         cv2.rectangle(warped, box, color.tolist(), 2)
-        cv2.putText(warped, label, (box[0], box[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color.tolist(), 2)
+        cv2.putText(warped, f"{label}: {confidence:.2f}", (box[0], box[1] - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, color.tolist(), 2)
 
     # Show original and transformed frames
     cv2.imshow("Original Video", frame)
