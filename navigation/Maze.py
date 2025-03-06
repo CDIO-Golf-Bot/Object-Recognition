@@ -3,13 +3,14 @@ import numpy as np
 from navigation.Point import Point
 
 class Maze:
-    def __init__(self, topLeft=None, topRight=None, botLeft=None, botRight=None):
+    def __init__(self, topLeft=None, topRight=None, botLeft=None, botRight=None, gridSize=(10, 10)): # can change gridize
         self.topLeft = topLeft
         self.topRight = topRight
         self.botLeft = botLeft
         self.botRight = botRight
         self.top_left_clicked = False
         self.bottom_right_clicked = False
+        self.gridSize = gridSize
         self.grid_points = {}  # Dictionary to store grid points
 
     def get_corners(self):
@@ -41,33 +42,33 @@ class Maze:
             self.bottom_right_clicked = True
             print(f"Bottom Right: {self.botRight}")
 
-    def pixel_to_grid(self, x, y, grid_size=(20, 20)):
+    def pixel_to_grid(self, x, y):
         """Map pixel coordinates to grid coordinates."""
         maze_width, maze_height = self.get_dimensions()
-        x_scale = maze_width / grid_size[0]
-        y_scale = maze_height / grid_size[1]
+        x_scale = maze_width / self.gridSize[0]
+        y_scale = maze_height / self.gridSize[1]
 
         grid_x = int((x - self.topLeft.x) / x_scale)
         grid_y = int((y - self.topLeft.y) / y_scale)
 
         return grid_x, grid_y
 
-    def grid_to_pixel(self, grid_x, grid_y, grid_size=(20, 20)):
+    def grid_to_pixel(self, grid_x, grid_y):
         """Convert grid coordinates to pixel coordinates."""
         if not self.topLeft:  # Ensure that topLeft is initialized
             print("Error: Maze corners not set yet.")
             return 0, 0  # Return default values when corners are not set
         
         maze_width, maze_height = self.get_dimensions()
-        x_scale = maze_width / grid_size[0]
-        y_scale = maze_height / grid_size[1]
+        x_scale = maze_width / self.gridSize[0]
+        y_scale = maze_height / self.gridSize[1]
 
         pixel_x = self.topLeft.x + grid_x * x_scale
         pixel_y = self.topLeft.y + grid_y * y_scale
 
         return int(pixel_x), int(pixel_y)
 
-    def draw_grid_and_coordinates(self, frame, grid_size=(20, 20)):
+    def draw_grid_and_coordinates(self, frame):
         """Draw grid lines and display coordinates at the intersections."""
         if not self.topLeft or not self.botRight:
             return  # Do nothing if corners are not set yet
@@ -76,8 +77,8 @@ class Maze:
         maze_width, maze_height = self.get_dimensions()
 
         # Calculate ideal grid size based on hardcoded grid_size
-        grid_width = grid_size[0]  # Number of columns (hardcoded)
-        grid_height = grid_size[1]  # Number of rows (hardcoded)
+        grid_width = self.gridSize[0]  # Number of columns (hardcoded)
+        grid_height = self.gridSize[1]  # Number of rows (hardcoded)
 
         # Calculate step size for each grid cell
         x_step = maze_width / grid_width
@@ -92,6 +93,8 @@ class Maze:
                 # Calculate the pixel position based on the grid index
                 x = int(self.topLeft.x + i * x_step)
                 y = int(self.topLeft.y + j * y_step)
+
+                cv2.circle(frame, (x, y), 3, (0, 0, 225), 1)
 
                 # Draw vertical grid lines
                 if i < grid_width + 1:
@@ -140,9 +143,6 @@ def main():
     cv2.namedWindow("Maze Setup with Grid")
     cv2.setMouseCallback("Maze Setup with Grid", mouse_callback, maze)
 
-    # Set a hardcoded grid size
-    hardcoded_grid_size = (20, 20)  # Set the number of rows and columns for the grid
-
     # Flag to check if the maze is initialized
     maze_initialized = False
 
@@ -152,7 +152,7 @@ def main():
             print("Error: Could not read frame")
             break
 
-        maze.draw_grid_and_coordinates(frame, grid_size=hardcoded_grid_size)
+        maze.draw_grid_and_coordinates(frame)
 
         # Only print grid points once the maze corners are set (initialized)
         if maze.topLeft and maze.botRight and not maze_initialized:
