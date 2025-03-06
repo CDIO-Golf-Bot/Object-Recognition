@@ -10,9 +10,15 @@ class Maze:
         self.botRight = botRight
         self.top_left_clicked = False
         self.bottom_right_clicked = False
+        self.grid_points = {}  # Dictionary to store grid points
 
     def get_corners(self):
         return self.topLeft, self.topRight, self.botLeft, self.botRight
+
+    def print_grid_points(self):
+        """Print all the grid points."""
+        for (grid_x, grid_y), point in self.grid_points.items():
+            print(f"Grid ({grid_x}, {grid_y}) has pixel point ({point.x}, {point.y})")
 
     def get_dimensions(self):
         """Returns the dimensions of the maze."""
@@ -46,6 +52,21 @@ class Maze:
 
         return grid_x, grid_y
 
+    def grid_to_pixel(self, grid_x, grid_y, grid_size=(20, 20)):
+        """Convert grid coordinates to pixel coordinates."""
+        if not self.topLeft:  # Ensure that topLeft is initialized
+            print("Error: Maze corners not set yet.")
+            return 0, 0  # Return default values when corners are not set
+        
+        maze_width, maze_height = self.get_dimensions()
+        x_scale = maze_width / grid_size[0]
+        y_scale = maze_height / grid_size[1]
+
+        pixel_x = self.topLeft.x + grid_x * x_scale
+        pixel_y = self.topLeft.y + grid_y * y_scale
+
+        return int(pixel_x), int(pixel_y)
+
     def draw_grid_and_coordinates(self, frame, max_cell_size):
         """Draw grid lines and display coordinates on the maze."""
         if not self.topLeft or not self.botRight:
@@ -68,6 +89,7 @@ class Maze:
 
         for i in range(grid_width + 1):  # horizontal grid
             for j in range(grid_height + 1):  # vertical grid
+                # Calculate the pixel position based on the grid index
                 x = int(self.topLeft.x + i * x_step)
                 y = int(self.topLeft.y + j * y_step)
 
@@ -86,7 +108,15 @@ class Maze:
                 cv2.putText(frame, f'{grid_coords[0]},{grid_coords[1]}',
                             (x + text_offset_x, y + text_offset_y), cv2.FONT_HERSHEY_SIMPLEX, font_scale,
                             font_color, font_thickness, cv2.LINE_AA)
+                
+                
+    def get_point(self, grid_x, grid_y):
+        return self.grid_points.get((grid_x, grid_y))
 
+    def set_point(self, grid_x, grid_y, point):
+        self.grid_points[(grid_x, grid_y)] = point
+
+# Mouse callback to set corners of the maze
 def mouse_callback(event, x, y, flags, param):
     """Mouse callback to set corners of the maze."""
     maze = param
@@ -113,6 +143,9 @@ def main():
     initial_size = 30
     cv2.createTrackbar("Cell Size", "Maze Setup with Grid", initial_size, 100, lambda x: None)
 
+    # Flag to check if the maze is initialized
+    maze_initialized = False
+
     while True:
         ret, frame = cap.read()
         if not ret:
@@ -122,10 +155,15 @@ def main():
         size_val = max(cv2.getTrackbarPos("Cell Size", "Maze Setup with Grid"), 1)
         maze.draw_grid_and_coordinates(frame, max_cell_size=size_val)
 
+        # Only print grid points once the maze corners are set (initialized)
+        if maze.topLeft and maze.botRight and not maze_initialized:
+            maze_initialized = True
+            maze.print_grid_points()  # Print all grid points
+
         # Show the frame with the maze and grid coordinates
         cv2.imshow("Maze Setup with Grid", frame)
 
-        # Exit the loop when the user presses 'q'
+        # Exit when 'q' is pressed
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
