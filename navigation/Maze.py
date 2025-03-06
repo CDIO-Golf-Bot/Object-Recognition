@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 from navigation.Point import Point
+from collections import deque
 
 class Maze:
     def __init__(self, topLeft=None, topRight=None, botLeft=None, botRight=None, gridSize=(10, 10)):  # can change gridSize
@@ -12,7 +13,12 @@ class Maze:
         self.bottom_right_clicked = False
         self.gridSize = gridSize
         self.grid_points = {}  # Dictionary to store grid points
+        self.grid2D = np.zeros((gridSize[0], gridSize[1]), dtype=int)
 
+    def get_grid(self):
+        """Return the maze grid (2D array) for pathfinding."""
+        return self.grid2D
+    
     def get_corners(self):
         return self.topLeft, self.topRight, self.botLeft, self.botRight
 
@@ -65,7 +71,6 @@ class Maze:
 
         pixel_x = self.topLeft.x + grid_x * x_scale
         pixel_y = self.topLeft.y + grid_y * y_scale
-
         return int(pixel_x), int(pixel_y)
 
     def draw_grid_and_coordinates(self, frame):
@@ -119,6 +124,45 @@ class Maze:
     def set_point(self, grid_x, grid_y, point):
         self.grid_points[(grid_x, grid_y)] = point
 
+    def bfs(self, start, end):
+        """Find the shortest path from start to end using BFS."""
+        rows, cols = self.gridSize
+        directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]  # Up, Down, Left, Right
+        queue = deque([(start, [start])])  # Queue of (current position, path)
+        visited = set([start])
+
+        while queue:
+            (current, path) = queue.popleft()
+            if current == end:
+                return path  # Return the path if the end is reached
+
+            for direction in directions:
+                next_row = current[0] + direction[0]
+                next_col = current[1] + direction[1]
+                next_pos = (next_row, next_col)
+
+                # Check if the next position is within bounds and not blocked
+                if (0 <= next_row < rows and 0 <= next_col < cols and
+                    self.grid2D[next_row][next_col] == 0 and next_pos not in visited):
+                    visited.add(next_pos)
+                    queue.append((next_pos, path + [next_pos]))
+
+        return None  # No path found
+
+    def draw_path(self, frame, path):
+        """Draw the path on the frame."""
+        if not path:
+            print("Error: Path is empty or invalid.")
+            return
+
+        for i in range(len(path) - 1):
+            start = self.grid_to_pixel(path[i][0], path[i][1])
+            end = self.grid_to_pixel(path[i + 1][0], path[i + 1][1])
+
+            # Draw the line
+            cv2.line(frame, start, end, (255, 255, ), 4)  # Draw a blue line for the path
+
+    
 # Mouse callback to set corners of the maze
 def mouse_callback(event, x, y, flags, param):
     """Mouse callback to set corners of the maze."""

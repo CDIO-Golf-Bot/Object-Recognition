@@ -2,9 +2,9 @@ import cv2
 import numpy as np
 from navigation.Maze import *
 from navigation.Point import *
-from navigation.Pathfinding import *
 
 def main():
+    """Main function to run the maze setup with camera feed and navigation."""
     maze = Maze()
 
     cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
@@ -20,7 +20,15 @@ def main():
     cv2.namedWindow("Maze Setup with Grid")
     cv2.setMouseCallback("Maze Setup with Grid", mouse_callback, maze)
 
+    # Flag to check if the maze is initialized
     maze_initialized = False
+
+    # Define robot and ball positions (grid coordinates)
+    robot = (2, 2)  # Example: Robot at (2, 2)
+    ball = (8, 8)   # Example: Ball at (8, 8)
+
+    # Variable to store the computed path
+    path = None
 
     while True:
         ret, frame = cap.read()
@@ -30,15 +38,21 @@ def main():
 
         maze.draw_grid_and_coordinates(frame)
 
-        # Only print grid points once the maze corners are set (initialized)
+        # Only compute the path once the maze corners are set
         if maze.topLeft and maze.botRight and not maze_initialized:
             maze_initialized = True
-            maze.print_grid_points()  # Print all grid points
+            print("Maze initialized. Computing path...")
 
-            # getting pixel point from a coordinate
-            grid_x, grid_y = 5, 5 
-            pixel_x, pixel_y = maze.get_point(grid_x, grid_y)
-            print(f"Pixel coordinates for grid ({grid_x}, {grid_y}): ({pixel_x}, {pixel_y})")
+            # Find the shortest path from robot to ball
+            path = maze.bfs(robot, ball)
+            if path:
+                print(f"Path found: {path}")
+            else:
+                print("No path found.")
+
+        # Draw the path in every frame after the maze is initialized
+        if maze_initialized and path:
+            maze.draw_path(frame, path)
 
         # Show the frame with the maze and grid coordinates
         cv2.imshow("Maze Setup with Grid", frame)
