@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-from points import Point  # Assuming Point class is in points.py
+from navigation.Point import Point
 class Maze:
     def __init__(self, topLeft=None, topRight=None, botLeft=None, botRight=None):
         self.topLeft = topLeft
