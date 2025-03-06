@@ -76,9 +76,8 @@ class Maze:
         # Get maze's width and height
         maze_width, maze_height = self.get_dimensions()
 
-        # Calculate ideal grid size based on hardcoded grid_size
-        grid_width = self.gridSize[0]  # Number of columns (hardcoded)
-        grid_height = self.gridSize[1]  # Number of rows (hardcoded)
+        grid_width = self.gridSize[0]
+        grid_height = self.gridSize[1] 
 
         # Calculate step size for each grid cell
         x_step = maze_width / grid_width
@@ -105,8 +104,8 @@ class Maze:
                     cv2.line(frame, (self.topLeft.x, y), (self.topRight.x, y), (0, 255, 0), 1)
 
                 # Display grid coordinates at the intersection points
-                grid_coords = (i, j)  # Grid coordinates are simply (i, j)
-                text_offset_x = 5  # Adjust text position for better visibility
+                grid_coords = (i, j) 
+                text_offset_x = 5 # text position
                 text_offset_y = -5
                 cv2.putText(frame, f'{grid_coords[0]},{grid_coords[1]}',
                             (x + text_offset_x, y + text_offset_y),
@@ -126,54 +125,3 @@ def mouse_callback(event, x, y, flags, param):
     maze = param
     if event == cv2.EVENT_LBUTTONDOWN:
         maze.set_corners(x, y)
-
-def main():
-    """Main function to run the maze setup with camera feed."""
-    maze = Maze()
-
-    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
-    if not cap.isOpened():
-        print("Error: Could not open camera")
-        return
-
-    # Camera resolution for maze
-    camera_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    camera_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
-    # Set mouse callback for user input
-    cv2.namedWindow("Maze Setup with Grid")
-    cv2.setMouseCallback("Maze Setup with Grid", mouse_callback, maze)
-
-    # Flag to check if the maze is initialized
-    maze_initialized = False
-
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            print("Error: Could not read frame")
-            break
-
-        maze.draw_grid_and_coordinates(frame)
-
-        # Only print grid points once the maze corners are set (initialized)
-        if maze.topLeft and maze.botRight and not maze_initialized:
-            maze_initialized = True
-            maze.print_grid_points()  # Print all grid points
-
-            # Example: Get pixel coordinates for a specific grid point
-            grid_x, grid_y = 5, 5  # Example grid point
-            pixel_x, pixel_y = maze.get_point(grid_x, grid_y)
-            print(f"Pixel coordinates for grid ({grid_x}, {grid_y}): ({pixel_x}, {pixel_y})")
-
-        # Show the frame with the maze and grid coordinates
-        cv2.imshow("Maze Setup with Grid", frame)
-
-        # Exit when 'q' is pressed
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
-
-    cap.release()
-    cv2.destroyAllWindows()
-
-if __name__ == "__main__":
-    main()
