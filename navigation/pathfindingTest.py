@@ -3,6 +3,19 @@ import numpy as np
 from navigation.Maze import *
 from navigation.Point import *
 
+def get_user_coordinates(grid_size):
+    """Get valid grid coordinates from the user."""
+    while True:
+        try:
+            x = int(input(f"Enter the x-coordinate (0 to {grid_size[0] - 1}): "))
+            y = int(input(f"Enter the y-coordinate (0 to {grid_size[1] - 1}): "))
+            if 0 <= x < grid_size[0] and 0 <= y < grid_size[1]:
+                return (x, y)
+            else:
+                print(f"Coordinates must be between (0, 0) and ({grid_size[0] - 1}, {grid_size[1] - 1}). Try again.")
+        except ValueError:
+            print("Invalid input. Please enter integers.")
+
 def main():
     """Main function to run the maze setup with camera feed and navigation."""
     maze = Maze()
@@ -23,10 +36,6 @@ def main():
     # Flag to check if the maze is initialized
     maze_initialized = False
 
-    # Define robot and ball positions (grid coordinates)
-    robot = (2, 2)  # Example: Robot at (2, 2)
-    ball = (8, 8)   # Example: Ball at (8, 8)
-
     # Variable to store the computed path
     path = None
 
@@ -41,7 +50,13 @@ def main():
         # Only compute the path once the maze corners are set
         if maze.topLeft and maze.botRight and not maze_initialized:
             maze_initialized = True
-            print("Maze initialized. Computing path...")
+            print("Maze initialized.")
+
+            # Get robot and ball positions from the user
+            print("Enter the robot's position:")
+            robot = get_user_coordinates(maze.gridSize)
+            print("Enter the ball's position:")
+            ball = get_user_coordinates(maze.gridSize)
 
             # Find the shortest path from robot to ball
             path = maze.bfs(robot, ball)
