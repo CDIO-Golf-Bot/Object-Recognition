@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+import threading
 
 # Global variables
 points = []
@@ -11,39 +12,57 @@ def get_points(event, x, y, flags, param):
     if event == cv2.EVENT_LBUTTONDOWN:  # Left mouse button click
         points.append((x, y))
         print(f"Point {len(points)}: {x}, {y}")
-
         if len(points) == 4:
             capturing = True  # Start processing frames
 
-# Open the webcam
-cap = cv2.VideoCapture(0)
-if not cap.isOpened():
-    print("Error: Could not access the camera.")
-    exit()
+# Multi-threaded Video Capture Class
+class VideoStream:
+    def __init__(self, src=0):
+        self.cap = cv2.VideoCapture(src)
+        self.frame = None
+        self.stopped = False
+        self.thread = threading.Thread(target=self.update, args=())
+        self.thread.daemon = True
+        self.thread.start()
 
-# Wait for the first frame to select points
-ret, frame = cap.read()
-if not ret:
-    print("Error: Could not capture video.")
-    cap.release()
-    exit()
+    def update(self):
+        while not self.stopped:
+            ret, frame = self.cap.read()
+            if ret:
+                self.frame = frame
 
+    def read(self):
+        return self.frame
+
+    def stop(self):
+        self.stopped = True
+        self.cap.release()
+
+# Start Video Stream
+video_stream = VideoStream()
+
+# Wait for the first frame
+while video_stream.read() is None:
+    pass
+
+frame = video_stream.read()
 cv2.imshow("Select 4 Points", frame)
 cv2.setMouseCallback("Select 4 Points", get_points)
 
-# Wait until 4 points are selected
 while not capturing:
     cv2.imshow("Select 4 Points", frame)
     if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
+        video_stream.stop()
+        exit()
 
-cv2.destroyAllWindows()  # Close the selection window
+cv2.destroyAllWindows()
 
-# Convert points to a NumPy array
+# Convert points to NumPy array
 src_points = np.array(points, dtype=np.float32)
 
 # Define the four corresponding points in the transformed (top-down) view
-width, height = 400, 600  # Adjust output size
+width, height = 400, 600
+
 dst_points = np.array([
     [0, 0],
     [width, 0],
@@ -56,9 +75,10 @@ H = cv2.getPerspectiveTransform(src_points, dst_points)
 
 # Object Detection Class
 class ObjectDetection:
-    def __init__(self, weights_path="C:/Users/balde/Desktop/Code/yolo/yolov4.weights", cfg_path="C:/Users/balde/Desktop/Code/yolo/yolov4.cfg", classes_path="C:/Users/balde/Desktop/Code/yolo/coco.names"):
+    def __init__(self, weights_path="C:/Users/balde/Desktop/yolo/yolov4.weights", 
+                 cfg_path="C:/Users/balde/Desktop/yolo/yolov4.cfg", 
+                 classes_path="C:/Users/balde/Desktop/yolo/coco.names"):
         print("Loading Object Detection")
-        print("Running OpenCV DNN with YOLOv4")
         self.nmsThreshold = 0.5
         self.confThreshold = 0.6
         self.image_size = 608
@@ -82,27 +102,26 @@ class ObjectDetection:
     def load_class_names(self, classes_path):
         try:
             with open(classes_path, "r") as file_object:
-                for class_name in file_object.readlines():
-                    self.classes.append(class_name.strip())
+                self.classes = [line.strip() for line in file_object.readlines()]
             print(f"Loaded {len(self.classes)} class names.")
         except Exception as e:
             print(f"Error loading class names: {e}")
 
     def detect(self, frame):
-        if self.model is None:  # Prevent calling detect if model failed to load
-            print("Error: Model is not loaded. Cannot perform detection.")
+        if self.model is None:
             return [], [], []
 
-        classes, confidences, boxes = self.model.detect(frame, nmsThreshold=self.nmsThreshold, confThreshold=self.confThreshold)
+        classes, confidences, boxes = self.model.detect(frame, 
+                                                         nmsThreshold=self.nmsThreshold, 
+                                                         confThreshold=self.confThreshold)
         
         filtered_classes = []
         filtered_confidences = []
         filtered_boxes = []
         
         for class_id, confidence, box in zip(classes, confidences, boxes):
-            label = self.classes[class_id]  # Get the class name
-            
-            if label in ["sports ball", "car"]:  # Only keep ping pong balls and cars
+            label = self.classes[class_id]
+            if label in ["sports ball", "car"]:
                 filtered_classes.append(class_id)
                 filtered_confidences.append(confidence)
                 filtered_boxes.append(box)
@@ -114,8 +133,8 @@ object_detector = ObjectDetection()
 
 # Process the video feed
 while True:
-    ret, frame = cap.read()
-    if not ret:
+    frame = video_stream.read()
+    if frame is None:
         break
 
     # Apply perspective warp
@@ -139,5 +158,5 @@ while True:
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
-cap.release()
+video_stream.stop()
 cv2.destroyAllWindows()
