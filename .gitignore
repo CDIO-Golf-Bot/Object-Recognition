@@ -1,0 +1,56 @@
+# Python bytecode files
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.cpython-*
+
+# Virtual environment folders
+venv/
+.venv/
+env/
+.env/
+
+# IDE-specific files
+.vscode/
+.vs/
+.idea/
+
+# Microsoft Visual Studio specific files
+.vs/
+.vscode/
+.user
+.userosscache
+.suo
+.sln
+.swp
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Distribution / packaging
+.egg/
+.egg-info/
+dist/
+build/
+uploads/
+
+# PyInstaller
+*.manifest
+*.spec
+
+# pytest
+.coverage
+.tox/
+.nox/
+.coverage.*
+nosetests.xml
+test_*.xml
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# VS Code settings
+.vscode/settings.json
