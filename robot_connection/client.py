@@ -1,14 +1,13 @@
 import asyncio
 import websockets
 
-async def send_coordinates():
-    uri = "ws://<EV3_IP>:8765"  # Replace <EV3_IP> with the EV3 brick's IP address
+async def send_command(command):
+    uri = "ws://10.135.97.57:8765"  # IP address of your EV3 robot
     async with websockets.connect(uri) as websocket:
-        while True:
-            coordinates = "100,200"  # Example coordinates (x, y)
-            await websocket.send(coordinates)
-            print(f"Sent coordinates: {coordinates}")
-            await asyncio.sleep(1)  # Send coordinates every second
+        await websocket.send(command)
+        response = await websocket.recv()
+        print(f"Response: {response}")
 
-# Run the client
-asyncio.get_event_loop().run_until_complete(send_coordinates())
+# Send commands dynamically
+asyncio.run(send_command("move_forward"))
+asyncio.run(send_command("turn_left"))
