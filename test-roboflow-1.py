@@ -1,13 +1,18 @@
 from roboflow import Roboflow
 import cv2
 
+
+
 # Initialize Roboflow with your API key
 rf = Roboflow(api_key="7kMjalIwU9TqGmKM0g4i")
-project = rf.workspace().project("CDIO")
-model = project.version("YOUR_MODEL_VERSION").model
+project = rf.workspace("pingpong-fafrv").project("cdio-m5e62")
+# or directly: project = rf.project("pingpong-fafrv/cdio-m5e62")
+
+# If your project has multiple versions, choose the correct version number (e.g., 1, 2, 3, etc.).
+model = project.version(2).model
 
 # Start video capture
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
 
 while True:
     ret, frame = cap.read()
