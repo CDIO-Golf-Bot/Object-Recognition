@@ -1,38 +1,65 @@
-#!/usr/bin/env pybricks-micropython
+#!/usr/bin/env python3
 
-from pybricks.hubs import EV3Brick
-from pybricks.ev3devices import (Motor, TouchSensor, ColorSensor,
-                                 InfraredSensor, UltrasonicSensor, GyroSensor)
-from pybricks.parameters import Port, Stop, Direction, Button, Color
-from pybricks.tools import wait, StopWatch, DataLog
-from pybricks.robotics import DriveBase
-from pybricks.media.ev3dev import SoundFile, ImageFile
+import socket
+import threading
+from ev3dev2.motor import Motor, OUTPUT_D
 
+# Initialize the motor
+motor = Motor(OUTPUT_D)
 
-# This program requires LEGO EV3 MicroPython v2.0 or higher.
-# Click "Open user guide" on the EV3 extension tab for more information.
+# Function to handle motor actions
+def handle_motor(command):
+    if command == "run":
+        print("Running motor D forward...")
+        motor.on_for_seconds(20, 20)  # Run motor forward at 20% power for 20 seconds
+    elif command == "reverse":
+        print("Running motor D in reverse...")
+        motor.on_for_seconds(-15, 20)  # Run motor in reverse at 15% power for 20 seconds
+    elif command == "stop":
+        print("Stopping motor D...")
+        motor.off()  # Stop the motor
 
+# Create a socket object
+server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-# Create your objects here.
-ev3 = EV3Brick()
-left_motor = Motor(Port.B, Direction.COUNTERCLOCKWISE)
-right_motor = Motor(Port.C, Direction.COUNTERCLOCKWISE)
-front_motor = Motor(Port.D, Direction.COUNTERCLOCKWISE)
+# Bind the socket to a specific address and port
+host = "0.0.0.0"  # Listen on all available interfaces
+port = 12345      # Port to listen on
+server_socket.bind((host, port))
 
-# Write your program here.
-ev3.speaker.beep()
-robot = DriveBase(left_motor, right_motor, wheel_diameter=54, axle_track = 200)
+# Listen for incoming connections
+server_socket.listen(1)
+print("Server listening on {}:{}...".format(host, port))
 
-# Move the front motor forward for 2 seconds
-front_motor.run_time(-200, 20000)  # speed: 500 (degrees per second), time: 2000ms (2 seconds)
+while True:
+    # Accept a connection
+    client_socket, client_address = server_socket.accept()
+    print("Connection from {} established!".format(client_address))
 
-# Alternatively, reverse the front motor for 2 seconds
-front_motor.run_time(150, 4000)  # speed: -500 (negative speed for reverse), time: 2000ms (2 seconds)
+    while True:
+        try:
+            # Receive data from the client
+            data = client_socket.recv(1024).decode().strip().lower()
+            if not data:
+                break  # Exit the loop if the client disconnects
+            print("Received command: {}".format(data))
 
-# Stop the motor after movement
-front_motor.stop()
+            # Process the command in a separate thread
+            if data in ["run", "reverse", "stop"]:
+                threading.Thread(target=handle_motor, args=(data,)).start()
+                response = "Command '{}' executed!".format(data)
+            elif data == "quit":
+                response = "Closing connection..."
+                break  # Exit the loop if the client sends "quit"
+            else:
+                response = "Unknown command!"
 
-#robot.straight(200)
-#robot.straight(-200)
+            # Send a response back to the client
+            client_socket.send(response.encode())
+        except ConnectionResetError:
+            print("Client disconnected unexpectedly!")
+            break
 
-#robot.turn(180)
+    # Close the connection
+    client_socket.close()
+    print("Connection closed.")
