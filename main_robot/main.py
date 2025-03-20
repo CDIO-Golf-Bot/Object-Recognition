@@ -2,22 +2,32 @@
 
 import socket
 import threading
-from ev3dev2.motor import Motor, OUTPUT_D
+from ev3dev2.motor import Motor, OUTPUT_D, OUTPUT_B, OUTPUT_C, MoveTank
 
-# Initialize the motor
-motor = Motor(OUTPUT_D)
+# Initialize the motors
+motor_d = Motor(OUTPUT_D)  # For motor D
+tank_drive = MoveTank(OUTPUT_B, OUTPUT_C)  # Use MoveTank for synchronized control of B and C
 
 # Function to handle motor actions
 def handle_motor(command):
     if command == "run":
         print("Running motor D forward...")
-        motor.on_for_seconds(20, 20)  # Run motor forward at 20% power for 20 seconds
+        motor_d.on_for_seconds(100, 20)  # Run motor D forward at 20% power for 20 seconds
     elif command == "reverse":
         print("Running motor D in reverse...")
-        motor.on_for_seconds(-15, 20)  # Run motor in reverse at 15% power for 20 seconds
+        motor_d.on_for_seconds(-15, 20)  # Run motor D in reverse at 15% power for 20 seconds
+    elif command == "pause":
+        print("Pausing motor D...")
+        motor_d.off()  # Stop motor D
+    elif command == "forward":
+        print("Running motors B and C forward...")
+        tank_drive.on_for_seconds(100, 100, 10)  # Move forward at 20% power for 10 seconds
+    elif command == "back":
+        print("Running motors B and C in reverse...")
+        tank_drive.on_for_seconds(-20, -20, 10)  # Move backward at 20% power for 10 seconds
     elif command == "stop":
-        print("Stopping motor D...")
-        motor.off()  # Stop the motor
+        print("Stopping motors B and C...")
+        tank_drive.off()  # Stop both motors
 
 # Create a socket object
 server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -45,7 +55,7 @@ while True:
             print("Received command: {}".format(data))
 
             # Process the command in a separate thread
-            if data in ["run", "reverse", "stop"]:
+            if data in ["run", "reverse", "stop", "forward", "back", "pause"]:
                 threading.Thread(target=handle_motor, args=(data,)).start()
                 response = "Command '{}' executed!".format(data)
             elif data == "quit":

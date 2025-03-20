@@ -26,7 +26,7 @@ def send_command(command):
 
 # Main loop
 while True:
-    command = input("Enter command (run/reverse/stop/quit): ").strip().lower()
+    command = input("Enter command (forward/back/pause/run/reverse/stop/quit): ").strip().lower()
     if command == "quit":
         break
     send_command(command)
