@@ -3,73 +3,116 @@
 import socket
 import threading
 from ev3dev2.motor import Motor, OUTPUT_D, OUTPUT_B, OUTPUT_C, MoveTank
+import time
 
-# Initialize the motors
-motor_d = Motor(OUTPUT_D)  # For motor D
-tank_drive = MoveTank(OUTPUT_B, OUTPUT_C)  # Use MoveTank for synchronized control of B and C
+# Initialize motors
+motor_d = Motor(OUTPUT_D)  # Collect/Deliver motor
+tank_drive = MoveTank(OUTPUT_B, OUTPUT_C)  # Driving motors
 
-# Function to handle motor actions
+# Flags for collect and deliver operations
+collecting = False
+delivering = False
+motor_thread = None  # Track the active motor thread
+
+
+def collect():
+    """Runs the motor to collect while the flag is True."""
+    global collecting
+    print("Starting collection...")
+    while collecting:
+        motor_d.on(25)
+        time.sleep(0.1)  # Prevent excessive CPU usage
+    motor_d.off()
+    print("Collection stopped.")
+
+
+def deliver():
+    """Runs the motor to deliver while the flag is True."""
+    global delivering
+    print("Starting delivery...")
+    while delivering:
+        motor_d.on(-20)
+        time.sleep(0.1)
+    motor_d.off()
+    print("Delivery stopped.")
+
+
 def handle_motor(command):
-    if command == "run":
-        print("Running motor D forward...")
-        motor_d.on_for_seconds(100, 20)  # Run motor D forward at 20% power for 20 seconds
-    elif command == "reverse":
-        print("Running motor D in reverse...")
-        motor_d.on_for_seconds(-15, 20)  # Run motor D in reverse at 15% power for 20 seconds
+    """Executes motor actions based on received commands."""
+    global collecting, delivering, motor_thread
+
+    if command == "collect":
+        if not collecting:
+            collecting = True
+            delivering = False  # Ensure only one action runs at a time
+            motor_thread = threading.Thread(target=collect, daemon=True)
+            motor_thread.start()
+        print("Already collecting...")
+
+    elif command == "deliver":
+        if not delivering:
+            delivering = True
+            collecting = False  # Ensure only one action runs at a time
+            motor_thread = threading.Thread(target=deliver, daemon=True)
+            motor_thread.start()
+        print("Already delivering...")
+
     elif command == "pause":
-        print("Pausing motor D...")
-        motor_d.off()  # Stop motor D
+        print("Pausing collection/delivery...")
+        collecting = False
+        delivering = False
+        if motor_thread:
+            motor_thread.join()  # Ensure the thread finishes
+        motor_d.off()
+
     elif command == "forward":
-        print("Running motors B and C forward...")
-        tank_drive.on_for_seconds(100, 100, 10)  # Move forward at 20% power for 10 seconds
+        print("Moving forward...")
+        tank_drive.on(50, 50)
+
     elif command == "back":
-        print("Running motors B and C in reverse...")
-        tank_drive.on_for_seconds(-20, -20, 10)  # Move backward at 20% power for 10 seconds
+        print("Moving backward...")
+        tank_drive.on(-50, -50)
+
+    elif command == "right":
+        print("Turning right...")
+        tank_drive.on(-30, 30)
+
+    elif command == "left":
+        print("Turning left...")
+        tank_drive.on(30, -30)
+
     elif command == "stop":
-        print("Stopping motors B and C...")
-        tank_drive.off()  # Stop both motors
+        print("Stopping drive motors...")
+        tank_drive.off()
 
-# Create a socket object
+
+# Create a socket server
 server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-# Bind the socket to a specific address and port
-host = "0.0.0.0"  # Listen on all available interfaces
-port = 12345      # Port to listen on
-server_socket.bind((host, port))
-
-# Listen for incoming connections
-server_socket.listen(1)
-print("Server listening on {}:{}...".format(host, port))
+server_socket.bind(("0.0.0.0", 12345))
+server_socket.listen(5)
+print("Server listening...")
 
 while True:
-    # Accept a connection
-    client_socket, client_address = server_socket.accept()
-    print("Connection from {} established!".format(client_address))
+    client_socket, addr = server_socket.accept()
+    print("Connection from {} established!".format(addr))
 
-    while True:
-        try:
-            # Receive data from the client
+    try:
+        while True:
             data = client_socket.recv(1024).decode().strip().lower()
             if not data:
-                break  # Exit the loop if the client disconnects
-            print("Received command: {}".format(data))
+                break  # Exit loop if client disconnects
+            print("Received: {}".format(data))
 
-            # Process the command in a separate thread
-            if data in ["run", "reverse", "stop", "forward", "back", "pause"]:
-                threading.Thread(target=handle_motor, args=(data,)).start()
-                response = "Command '{}' executed!".format(data)
-            elif data == "quit":
-                response = "Closing connection..."
-                break  # Exit the loop if the client sends "quit"
+            if data in ["collect", "deliver", "pause"]:
+                handle_motor(data)  # Run in a thread only for long-running tasks
+                client_socket.send(b"Command received")
+            elif data in ["forward", "back", "left", "right", "stop"]:
+                handle_motor(data)  # Execute instantly
+                client_socket.send(b"Command received")
             else:
-                response = "Unknown command!"
-
-            # Send a response back to the client
-            client_socket.send(response.encode())
-        except ConnectionResetError:
-            print("Client disconnected unexpectedly!")
-            break
-
-    # Close the connection
-    client_socket.close()
-    print("Connection closed.")
+                client_socket.send(b"Unknown command")
+    except ConnectionResetError:
+        print("Client disconnected.")
+    finally:
+        client_socket.close()
+        print("Connection closed.")
