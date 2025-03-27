@@ -3,6 +3,7 @@ import cv2
 import random
 import threading
 import time
+import numpy as np
 from queue import Queue
 
 # ✅ Initialize Roboflow
@@ -24,76 +25,83 @@ output_queue = Queue(maxsize=1)
 skip_frames = 3
 frame_count = 0
 
-origin_x, origin_y = None, None
-grid_x, grid_y = None, None
-origin_lock = threading.Lock()
+# ✅ For metric grid calibration
+calibration_points = []
+homography_matrix = None
+real_width_cm = 180  # Actual field width
+real_height_cm = 120  # Actual field height
+grid_spacing_cm = 10
 
-def click_to_set_grid(event, x, y, flags, param):
-    global origin_x, origin_y, grid_x, grid_y
+# ✅ Mouse click for calibration
+def click_to_set_corners(event, x, y, flags, param):
+    global calibration_points, homography_matrix
     if event == cv2.EVENT_LBUTTONDOWN:
-        with origin_lock:
-            if origin_x is None and origin_y is None:
-                origin_x, origin_y = x, y
-                print(f"First Point (Origin) Set: ({origin_x}, {origin_y})")
-            elif grid_x is None and grid_y is None:
-                grid_x, grid_y = x, y
-                print(f"Second Point (Grid End) Set: ({grid_x}, {grid_y})")
-            else:
-                origin_x, origin_y, grid_x, grid_y = None, None, None, None
-                print("Grid Reset! Click two new points.")
+        if len(calibration_points) < 4:
+            calibration_points.append([x, y])
+            print(f"Corner {len(calibration_points)} set: ({x}, {y})")
+        if len(calibration_points) == 4:
+            dst_points = np.array([
+                [0, 0],
+                [real_width_cm, 0],
+                [real_width_cm, real_height_cm],
+                [0, real_height_cm]
+            ], dtype="float32")
+            src_points = np.array(calibration_points, dtype="float32")
+            homography_matrix = cv2.getPerspectiveTransform(dst_points, src_points)
+            print("✅ Homography calculated.")
 
+# ✅ Grid drawing using homography
+def draw_metric_grid(frame):
+    if homography_matrix is None:
+        return frame
+    overlay = frame.copy()
+    for x_cm in range(0, real_width_cm + 1, grid_spacing_cm):
+        pt1 = np.array([[[x_cm, 0]]], dtype="float32")
+        pt2 = np.array([[[x_cm, real_height_cm]]], dtype="float32")
+        pt1 = cv2.perspectiveTransform(pt1, homography_matrix)[0][0]
+        pt2 = cv2.perspectiveTransform(pt2, homography_matrix)[0][0]
+        cv2.line(overlay, tuple(pt1.astype(int)), tuple(pt2.astype(int)), (100, 100, 100), 1)
+    for y_cm in range(0, real_height_cm + 1, grid_spacing_cm):
+        pt1 = np.array([[[0, y_cm]]], dtype="float32")
+        pt2 = np.array([[[real_width_cm, y_cm]]], dtype="float32")
+        pt1 = cv2.perspectiveTransform(pt1, homography_matrix)[0][0]
+        pt2 = cv2.perspectiveTransform(pt2, homography_matrix)[0][0]
+        cv2.line(overlay, tuple(pt1.astype(int)), tuple(pt2.astype(int)), (100, 100, 100), 1)
+    return overlay
+
+# ✅ Convert pixel position to cm
+def pixel_to_cm(px, py):
+    if homography_matrix is None:
+        return None
+    pt = np.array([[[px, py]]], dtype="float32")
+    inv_h = np.linalg.inv(homography_matrix)
+    real_pt = cv2.perspectiveTransform(pt, inv_h)[0][0]
+    return real_pt
+
+# ✅ Frame capture
 def capture_frames():
     global frame_count
     while True:
         ret, frame = cap.read()
         if not ret:
             break
-
         frame_count += 1
         if frame_count % skip_frames == 0:
             if not frame_queue.full():
-                frame_queue.put(frame)  # ✅ Full resolution frame passed forward
+                frame_queue.put(frame)
 
-def draw_coordinate_system(frame):
-    h, w, _ = frame.shape
-    with origin_lock:
-        if origin_x is None or grid_x is None:
-            return frame
-        ox, oy = origin_x, origin_y
-        gx, gy = grid_x, grid_y
-
-    cv2.rectangle(frame, (ox, oy), (gx, gy), (255, 255, 255), 2)
-
-    step_size = 50
-    for x in range(min(ox, gx), max(ox, gx), step_size):
-        cv2.line(frame, (x, min(oy, gy)), (x, max(oy, gy)), (50, 50, 50), 1)
-    for y in range(min(oy, gy), max(oy, gy), step_size):
-        cv2.line(frame, (min(ox, gx), y), (max(ox, gx), y), (50, 50, 50), 1)
-
-    return frame
-
+# ✅ Object detection and drawing
 def process_frames():
     while True:
         if not frame_queue.empty():
             frame = frame_queue.get()
             original_frame = frame.copy()
-
             start_time = time.time()
-
             resized = cv2.resize(frame, (416, 416))
             predictions = model.predict(resized, confidence=30, overlap=20).json()
-
             object_counts = {}
-
             scale_x = frame.shape[1] / 416
             scale_y = frame.shape[0] / 416
-
-            with origin_lock:
-                if origin_x is None or grid_x is None:
-                    output_queue.put(original_frame)
-                    continue
-                ox, oy = origin_x, origin_y
-
             for pred in predictions.get('predictions', []):
                 x = int(pred['x'] * scale_x)
                 y = int(pred['y'] * scale_y)
@@ -101,22 +109,20 @@ def process_frames():
                 h = int(pred['height'] * scale_y)
                 label = pred['class']
                 confidence = pred['confidence']
-
-                relative_x = x - ox
-                relative_y = oy - y
-
                 object_counts[label] = object_counts.get(label, 0) + 1
-
                 if label not in class_colors:
                     class_colors[label] = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
-
                 color = class_colors[label]
-
                 cv2.rectangle(original_frame, (x - w // 2, y - h // 2), (x + w // 2, y + h // 2), color, 2)
                 cv2.putText(original_frame, f"{label}: {confidence:.2f}", (x - w // 2, y - h // 2 - 10),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
-                cv2.putText(original_frame, f"({relative_x}, {relative_y})", (x + 5, y - 5),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+
+                # Show real-world coordinates in cm
+                cm_coords = pixel_to_cm(x, y)
+                if cm_coords is not None:
+                    cx, cy = cm_coords
+                    cv2.putText(original_frame, f"{cx:.1f}cm, {cy:.1f}cm", (x + 5, y + 15),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
 
             y_offset = 30
             for obj, count in object_counts.items():
@@ -124,18 +130,16 @@ def process_frames():
                             cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
                 y_offset += 30
 
-            frame_with_grid = draw_coordinate_system(original_frame)
-
+            frame_with_grid = draw_metric_grid(original_frame)
             if not output_queue.full():
                 output_queue.put(frame_with_grid)
-
             end_time = time.time()
             print(f"Inference Time: {end_time - start_time:.2f} sec | Detected Objects: {object_counts}")
 
+# ✅ Display logic
 def display_frames():
     cv2.namedWindow("Live Object Detection")
-    cv2.setMouseCallback("Live Object Detection", click_to_set_grid)
-
+    cv2.setMouseCallback("Live Object Detection", click_to_set_corners)
     while True:
         if not output_queue.empty():
             frame = output_queue.get()
