@@ -30,7 +30,7 @@ calibration_points = []
 homography_matrix = None
 real_width_cm = 180
 real_height_cm = 120
-grid_spacing_cm = 5
+grid_spacing_cm = 2
 
 obstacles = set()
 ball_positions_cm = []  # Each element is now (cx, cy, label)
