@@ -31,7 +31,7 @@ def deliver():
     global delivering
     print("Starting delivery...")
     while delivering:
-        motor_d.on(-20)
+        motor_d.on(-25)
         time.sleep(0.1)
     motor_d.off()
     print("Delivery stopped.")
@@ -67,19 +67,19 @@ def handle_motor(command):
 
     elif command == "forward":
         print("Moving forward...")
-        tank_drive.on(50, 50)
+        tank_drive.on(75, 75)
 
     elif command == "back":
         print("Moving backward...")
-        tank_drive.on(-50, -50)
+        tank_drive.on(-75, -75)
 
     elif command == "right":
         print("Turning right...")
-        tank_drive.on(-30, 30)
+        tank_drive.on(-50, 50)
 
     elif command == "left":
         print("Turning left...")
-        tank_drive.on(30, -30)
+        tank_drive.on(50, -50)
 
     elif command == "stop":
         print("Stopping drive motors...")
