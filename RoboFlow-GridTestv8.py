@@ -34,23 +34,31 @@ real_height_cm = 120
 grid_spacing_cm = 2
 
 obstacles = set()
-ball_positions_cm = []  # Each element is now (cx, cy, label)
+ball_positions_cm = []
 start_point_cm = (20, 20)
+pending_route = None
 
 goal_range = {
     'A': [(real_width_cm, y) for y in range(56, 65)],
-    # 'B': [(real_width_cm - 5, y) for y in range(56, 65)]
 }
 selected_goal = 'A'
 placing_goal = False
 
-# Define an ignored area in cm (adjust these values as needed)
 ignored_area = {
     'x_min': 50,
     'x_max': 100,
     'y_min': 50,
     'y_max': 100
 }
+
+def save_route_to_file(route_cm, filename="route.txt"):
+    try:
+        with open(filename, "w") as f:
+            for x, y in route_cm:
+                f.write(f"{x:.2f},{y:.2f}\n")
+        print("📦 Route saved to route.txt")
+    except Exception as e:
+        print("❌ Error saving route:", e)
 
 def click_to_set_corners(event, x, y, flags, param):
     global calibration_points, homography_matrix, obstacles
@@ -98,42 +106,6 @@ def ensure_outer_edges_walkable():
         obstacles.discard((max_x, gy))
     print("✅ Outer edges cleared.")
 
-def draw_metric_grid(frame):
-    if homography_matrix is None:
-        return frame
-    overlay = frame.copy()
-    for x_cm in range(0, real_width_cm + 1, grid_spacing_cm):
-        pt1 = np.array([[[x_cm, 0]]], dtype="float32")
-        pt2 = np.array([[[x_cm, real_height_cm]]], dtype="float32")
-        pt1 = cv2.perspectiveTransform(pt1, homography_matrix)[0][0]
-        pt2 = cv2.perspectiveTransform(pt2, homography_matrix)[0][0]
-        cv2.line(overlay, tuple(pt1.astype(int)), tuple(pt2.astype(int)), (100, 100, 100), 1)
-    for y_cm in range(0, real_height_cm + 1, grid_spacing_cm):
-        pt1 = np.array([[[0, y_cm]]], dtype="float32")
-        pt2 = np.array([[[real_width_cm, y_cm]]], dtype="float32")
-        pt1 = cv2.perspectiveTransform(pt1, homography_matrix)[0][0]
-        pt2 = cv2.perspectiveTransform(pt2, homography_matrix)[0][0]
-        cv2.line(overlay, tuple(pt1.astype(int)), tuple(pt2.astype(int)), (100, 100, 100), 1)
-    for (gx, gy) in obstacles:
-        pt_cm = np.array([[[gx * grid_spacing_cm, gy * grid_spacing_cm]]], dtype='float32')
-        pt_px = cv2.perspectiveTransform(pt_cm, homography_matrix)[0][0]
-        cv2.circle(overlay, tuple(pt_px.astype(int)), 6, (0, 0, 255), -1)
-    for label, pts in goal_range.items():
-        for pt in pts:
-            px = cv2.perspectiveTransform(np.array([[[pt[0], pt[1]]]], dtype="float32"), homography_matrix)[0][0]
-            cv2.circle(overlay, tuple(px.astype(int)), 4, (0, 255, 0), -1)
-        mid_y = (pts[0][1] + pts[-1][1]) // 2
-        px = cv2.perspectiveTransform(np.array([[[pts[0][0], mid_y]]], dtype="float32"), homography_matrix)[0][0]
-        cv2.putText(overlay, f"Goal {label}", tuple((px + 10).astype(int)),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-    # 🔵 Start point marker
-    pt_cm = np.array([[[start_point_cm[0], start_point_cm[1]]]], dtype="float32")
-    pt_px = cv2.perspectiveTransform(pt_cm, homography_matrix)[0][0]
-    cv2.circle(overlay, tuple(pt_px.astype(int)), 8, (255, 0, 0), -1)
-    cv2.putText(overlay, "Start", tuple((pt_px + 10).astype(int)),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
-    return overlay
-
 def pixel_to_cm(px, py):
     if homography_matrix is None:
         return None
@@ -177,17 +149,14 @@ def astar(start, goal):
     return []
 
 def draw_full_route(frame, ball_positions):
+    global pending_route
     if homography_matrix is None:
         return frame
 
-    # Separate balls into non-orange and orange (using case-insensitive comparison)
     non_orange_balls = [ball for ball in ball_positions if "orange" not in ball[2].strip().lower()]
     orange_balls = [ball for ball in ball_positions if "orange" in ball[2].strip().lower()]
-
-    # Choose one orange ball if available
     orange_ball = orange_balls[0] if orange_balls else None
 
-    # Build the route starting at the start point
     route = [start_point_cm]
     current = start_point_cm
     non_orange_remaining = non_orange_balls.copy()
@@ -200,18 +169,17 @@ def draw_full_route(frame, ball_positions):
         non_orange_remaining.remove(next_ball)
         current = (next_ball[0], next_ball[1])
 
-    # Append the orange ball last if it exists
     if orange_ball:
         route.append((orange_ball[0], orange_ball[1]))
         current = (orange_ball[0], orange_ball[1])
 
-    # Now choose the goal candidate based on the last route point
     goal_candidates = goal_range.get(selected_goal)
     if not goal_candidates:
         return frame
     goal_cm = min(goal_candidates, key=lambda g: heuristic(cm_to_grid_coords(*current), cm_to_grid_coords(*g)))
     route.append(goal_cm)
 
+    pending_route = route
     print("Computed route (in cm):", route)
 
     overlay = frame.copy()
@@ -263,14 +231,13 @@ def process_frames():
                 h = int(pred['height'] * scale_y)
                 label = pred['class']
                 label_lower = label.strip().lower()
-                # Check using substring matching so labels like "white_ball" or "orange_ball" match.
                 if "white" in label_lower:
-                    color = (255, 255, 224)  # Very light cyan
+                    color = (255, 255, 224)
                 elif "orange" in label_lower:
-                    color = (0, 165, 255)    # Orange
+                    color = (0, 165, 255)
                 else:
                     color = class_colors.setdefault(label, (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)))
-                
+
                 cv2.rectangle(original_frame, (x - w // 2, y - h // 2),
                               (x + w // 2, y + h // 2), color, 2)
                 cv2.putText(original_frame, f"{label}", (x - w // 2, y - h // 2 - 10),
@@ -278,7 +245,6 @@ def process_frames():
                 cm_coords = pixel_to_cm(x, y)
                 if cm_coords is not None:
                     cx, cy = cm_coords
-                    # Ignore balls that fall within the ignored area
                     if (ignored_area['x_min'] <= cx <= ignored_area['x_max'] and
                         ignored_area['y_min'] <= cy <= ignored_area['y_max']):
                         continue
@@ -288,8 +254,31 @@ def process_frames():
             if not output_queue.full():
                 output_queue.put(frame_with_route)
 
+def draw_metric_grid(frame):
+    if homography_matrix is None:
+        return frame
+    overlay = frame.copy()
+    for x_cm in range(0, real_width_cm + 1, grid_spacing_cm):
+        pt1 = np.array([[[x_cm, 0]]], dtype="float32")
+        pt2 = np.array([[[x_cm, real_height_cm]]], dtype="float32")
+        pt1 = cv2.perspectiveTransform(pt1, homography_matrix)[0][0]
+        pt2 = cv2.perspectiveTransform(pt2, homography_matrix)[0][0]
+        cv2.line(overlay, tuple(pt1.astype(int)), tuple(pt2.astype(int)), (100, 100, 100), 1)
+    for y_cm in range(0, real_height_cm + 1, grid_spacing_cm):
+        pt1 = np.array([[[0, y_cm]]], dtype="float32")
+        pt2 = np.array([[[real_width_cm, y_cm]]], dtype="float32")
+        pt1 = cv2.perspectiveTransform(pt1, homography_matrix)[0][0]
+        pt2 = cv2.perspectiveTransform(pt2, homography_matrix)[0][0]
+        cv2.line(overlay, tuple(pt1.astype(int)), tuple(pt2.astype(int)), (100, 100, 100), 1)
+        pt_cm = np.array([[[start_point_cm[0], start_point_cm[1]]]], dtype="float32")
+        pt_px = cv2.perspectiveTransform(pt_cm, homography_matrix)[0][0]
+        cv2.circle(overlay, tuple(pt_px.astype(int)), 8, (255, 0, 0), -1)
+        cv2.putText(overlay, "Start", tuple((pt_px + 10).astype(int)),
+        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
+    return overlay
+
 def display_frames():
-    global placing_goal, selected_goal
+    global placing_goal, selected_goal, pending_route
     cv2.namedWindow("Live Object Detection")
     cv2.setMouseCallback("Live Object Detection", click_to_set_corners)
     while True:
@@ -305,6 +294,11 @@ def display_frames():
             elif key == ord('2'):
                 selected_goal = 'B'
                 print("✅ Selected Goal B")
+            elif key == ord('s'):
+                if pending_route:
+                    save_route_to_file(pending_route)
+                else:
+                    print("⚠️ No route to save yet.")
 
 cap_thread = threading.Thread(target=capture_frames, daemon=True)
 proc_thread = threading.Thread(target=process_frames, daemon=True)
