@@ -54,8 +54,8 @@ def send_path(host, port, path, initial_heading):
 
         print("Done sending path.")
 
-if __name__ == "__main__":
-    # Example usage:
-    path = [(1,1), (2,1), (3,1), (3,0), (3,-1), (2,-1)] #turn test
-    #path = [(1,1), (2,1), (3,1), (4,1), (5,1), (6,1), (7,1)]     # forward test
-    send_path(HOST, PORT, path, initial_heading='E')
+# if __name__ == "__main__":
+#     # Example usage:
+#     path = [(1,1), (2,1), (3,1), (3,0), (3,-1), (2,-1)] #turn test
+#     #path = [(1,1), (2,1), (3,1), (4,1), (5,1), (6,1), (7,1)]     # forward test
+#     send_path(HOST, PORT, path, initial_heading='E')
