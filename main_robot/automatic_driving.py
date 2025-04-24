@@ -3,7 +3,7 @@ import socket
 import json
 import math
 import time
-from ev3dev2.motor import MoveTank, OUTPUT_B, OUTPUT_C
+from ev3dev2.motor import MoveTank, Motor, OUTPUT_B, OUTPUT_C, OUTPUT_D
 
 # === CONFIGURATION ===
 WHEEL_DIAM_CM       = 3.7                    # your wheel diameter in cm
@@ -12,28 +12,45 @@ TRACK_CM            = 24                     # effective distance between wheels
 TURN_SPEED          = 35                     # deg/s for in-place turns
 DRIVE_SPEED         = 50                     # deg/s for driving straight
 TURN_CALIBRATION    = 1.1                    # multiply to tune actual vs. commanded turn
+AUX_MOTOR_SPEED     = 50                     # deg/s for D motor whenever moving
 
 # === INITIALIZE ===
 tank = MoveTank(OUTPUT_B, OUTPUT_C)
+aux_motor = Motor(OUTPUT_D)
+
+def _start_aux():
+    """Start the D-motor spinning forward at AUX_MOTOR_SPEED."""
+    aux_motor.on(AUX_MOTOR_SPEED)
+
+def _stop_aux():
+    """Stop the D-motor."""
+    aux_motor.off()
 
 # Drive straight for a given total distance (cm)
 def drive_distance(distance_cm):
     wheel_deg = (distance_cm / WHEEL_CIRC_CM) * 360.0
+    # start aux before moving
+    _start_aux()
     tank.on_for_degrees(DRIVE_SPEED, DRIVE_SPEED, wheel_deg)
+    # stop aux when done
+    _stop_aux()
 
 # Perform an in-place turn for a desired robot angle (deg)
 def perform_turn(theta_deg):
     base_wheel_deg = (TRACK_CM * math.pi * abs(theta_deg)) / WHEEL_CIRC_CM
     calibrated_deg = base_wheel_deg * TURN_CALIBRATION
+    # start aux before moving
+    _start_aux()
     if theta_deg > 0:
         tank.on_for_degrees(TURN_SPEED, -TURN_SPEED, calibrated_deg)
     else:
         tank.on_for_degrees(-TURN_SPEED, TURN_SPEED, calibrated_deg)
+    # stop aux when done
+    _stop_aux()
 
 # Handle a single parsed command dict
 # cmd keys: 'turn' (deg), 'distance' (cm)
 def handle_command(cmd, buffer):
-    # buffer: dict with 'distance_buffer'
     # 1) If there's a turn, flush any buffered forward first
     if 'turn' in cmd:
         if buffer['distance_buffer'] > 0:
@@ -46,7 +63,6 @@ def handle_command(cmd, buffer):
         buffer['distance_buffer'] += float(cmd['distance'])
 
 # Main server loop
-# Accept one client at a time; keep listening after disconnects
 def run_server(host='', port=12345):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as srv:
         srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -80,7 +96,8 @@ def run_server(host='', port=12345):
                         except json.JSONDecodeError:
                             print("Invalid JSON:", line)
                     # auto-flush forward if idle > threshold
-                    if buffer['distance_buffer'] > 0 and time.time() - buffer['last_cmd_time'] > 0.2:
+                    if (buffer['distance_buffer'] > 0 and
+                        time.time() - buffer['last_cmd_time'] > 0.2):
                         drive_distance(buffer['distance_buffer'])
                         buffer['distance_buffer'] = 0.0
 
