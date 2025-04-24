@@ -35,14 +35,11 @@ def get_movement_commands(current, target, heading):
     return commands, desired_heading
 
 # Client Code
-def send_path(host, port, path):
+def send_path(host, port, path, heading):
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         client_socket.connect((host, port))
         print("Connected to EV3")
-        
-        # Send each coordinate step-by-step
-        heading = 'S'  # Assume starting heading is South (adjust as needed)
         current_pos = path[0]
         
         for target_pos in path[1:]:
@@ -63,6 +60,7 @@ def send_path(host, port, path):
         client_socket.close()
         print("Disconnected from EV3.")
 
-# Example path
+# Example path hardcoded
+heading = 'S' # South
 path = [(1, 1), (2, 1), (3, 1), (3, 0), (3, -1), (2, -1)]
-send_path("10.41.178.57", 12345, path)
+send_path("10.225.58.57", 12345, path, heading)
