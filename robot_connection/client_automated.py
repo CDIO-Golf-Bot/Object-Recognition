@@ -48,7 +48,7 @@ def send_path(host, port, path, heading):
             for cmd in commands:
                 print(f"Sending command: {cmd}")
                 client_socket.send(cmd.encode())  # Send command
-                time.sleep(1)  # Small delay to ensure robot processes one command at a time
+                time.sleep(0.1)  # Small delay to ensure robot processes one command at a time
             
             # Update current position and heading
             current_pos = target_pos
@@ -61,6 +61,6 @@ def send_path(host, port, path, heading):
         print("Disconnected from EV3.")
 
 # Example path hardcoded
-heading = 'S' # South
-path = [(1, 1), (2, 1), (3, 1), (3, 0), (3, -1), (2, -1)]
-send_path("10.225.58.57", 12345, path, heading)
+# heading = 'S' # South
+# path = [(1, 1), (2, 1), (3, 1), (3, 0), (3, -1), (2, -1)]
+# send_path("10.225.58.57", 12345, path, heading)

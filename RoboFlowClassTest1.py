@@ -229,7 +229,11 @@ class RoboFlowGridTest:
         # Debug: print computed route (in centimeters)
         print("Computed route (in cm):", route)
         heading = 'S'  # Example heading, adjust as needed
-        send_path("10.225.58.57", 12345, self.full_path, heading)
+        try:
+            send_path("10.225.58.57", 12345, self.full_path, heading)
+            print("Path successfully sent to robot")
+        except Exception as e:
+            print(f"Error sending path to robot: {e}")
 
         overlay = frame.copy()
         path_color = (0, 255, 255)
