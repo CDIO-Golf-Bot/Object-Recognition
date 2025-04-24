@@ -210,6 +210,21 @@ class RoboFlowGridTest:
         goal_cm = min(goal_candidates, key=lambda g: self.heuristic(self.cm_to_grid_coords(*current), self.cm_to_grid_coords(*g)))
         route.append(goal_cm)
 
+                # --- New: compile full path in grid cells ---
+        full_path = []
+        for i in range(len(route) - 1):
+            start_g = self.cm_to_grid_coords(*route[i])
+            end_g   = self.cm_to_grid_coords(*route[i+1])
+            segment = self.astar(start_g, end_g)
+            if full_path and segment and segment[0] == full_path[-1]:
+                segment = segment[1:]
+            full_path.extend(segment)
+
+        # Print and emit the path
+        print(f"path = {full_path}")  # e.g. path = [(1,1),(2,1),...]
+        # if not self.route_queue.full():
+        #     self.route_queue.put(full_path)
+
         # Debug: print computed route (in centimeters)
         print("Computed route (in cm):", route)
 
