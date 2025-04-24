@@ -29,10 +29,10 @@ def handle_motor(command):
         tank_drive.on_for_seconds(50, 50, 2)  # Adjust duration if necessary
     elif command == "right":
         print("Turning right...")
-        tank_drive.on_for_seconds(-30, 30, 2)  # Adjust duration if necessary
+        tank_drive.on_for_degrees(-30, 30, 600)  # Example only
     elif command == "left":
         print("Turning left...")
-        tank_drive.on_for_seconds(30, -30, 2)  # Adjust duration if necessary
+        tank_drive.on_for_degrees(30, -30, 600)  # Example only
     elif command == "turn around":
         print("Turning around...")
         tank_drive.on_for_seconds(30, -30, 4)  # Adjust duration if necessary
