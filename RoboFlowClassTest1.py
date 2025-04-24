@@ -6,6 +6,7 @@ import time
 import numpy as np
 from queue import Queue
 import heapq
+from robot_connection.client_automated import send_path
 
 class RoboFlowGridTest:
     def __init__(self):
@@ -211,22 +212,24 @@ class RoboFlowGridTest:
         route.append(goal_cm)
 
                 # --- New: compile full path in grid cells ---
-        full_path = []
+        self.full_path = []
         for i in range(len(route) - 1):
             start_g = self.cm_to_grid_coords(*route[i])
             end_g   = self.cm_to_grid_coords(*route[i+1])
             segment = self.astar(start_g, end_g)
-            if full_path and segment and segment[0] == full_path[-1]:
+            if self.full_path and segment and segment[0] == self.full_path[-1]:
                 segment = segment[1:]
-            full_path.extend(segment)
+            self.full_path.extend(segment)
 
         # Print and emit the path
-        print(f"path = {full_path}")  # e.g. path = [(1,1),(2,1),...]
+        print(f"path = {self.full_path}")  # e.g. path = [(1,1),(2,1),...]
         # if not self.route_queue.full():
         #     self.route_queue.put(full_path)
 
         # Debug: print computed route (in centimeters)
         print("Computed route (in cm):", route)
+        heading = 'S'  # Example heading, adjust as needed
+        send_path("10.225.58.57", 12345, self.full_path, heading)
 
         overlay = frame.copy()
         path_color = (0, 255, 255)
@@ -306,6 +309,9 @@ class RoboFlowGridTest:
                 elif key == ord('2'):
                     self.selected_goal = 'B'
                     print("✅ Selected Goal B")
+
+    def get_path(self):
+        return getattr(self, 'full_path', [])
 
     def run(self):
         cap_thread = threading.Thread(target=self.capture_frames, daemon=True)
