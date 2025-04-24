@@ -1,66 +1,61 @@
 import socket
+import math
+import json
 import time
 
-def get_movement_commands(current, target, heading):
-    """Determines the movement commands needed to go from current to target coordinates.
-       Returns a tuple: (list_of_commands, desired_heading)"""
-    x1, y1 = current
-    x2, y2 = target
+HOST = "10.225.58.57"
+PORT = 12345
+CM_PER_UNIT = 2.0
+CARDINAL_ANGLE = {'E': 0.0, 'N': 90.0, 'W': 180.0, 'S': 270.0}
 
-    # Determine desired heading based on coordinate differences
-    if x2 > x1:
-        desired_heading = 'E'
-    elif x2 < x1:
-        desired_heading = 'W'
-    elif y2 > y1:
-        desired_heading = 'N'
-    else:
-        desired_heading = 'S'
-    
-    turn_map = {
-        ('N', 'E'): 'right', ('N', 'W'): 'left', ('N', 'S'): 'turn around',
-        ('E', 'S'): 'right', ('E', 'N'): 'left', ('E', 'W'): 'turn around',
-        ('S', 'W'): 'right', ('S', 'E'): 'left', ('S', 'N'): 'turn around',
-        ('W', 'N'): 'right', ('W', 'S'): 'left', ('W', 'E'): 'turn around',
-    }
-    
-    commands = []
-    # If the current heading does not match the desired, add the turning command
-    if heading != desired_heading:
-        turn_cmd = turn_map.get((heading, desired_heading), 'turn error')
-        commands.append(turn_cmd)
-    
-    # After turning, move forward
-    commands.append('forward')
-    return commands, desired_heading
+def shortest_angle_diff(target, current):
+    diff = (target - current + 180) % 360 - 180
+    return diff
 
-# Client Code
-def send_path(host, port, path, heading):
-    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        client_socket.connect((host, port))
-        print("Connected to EV3")
-        current_pos = path[0]
-        
-        for target_pos in path[1:]:
-            commands, desired_heading = get_movement_commands(current_pos, target_pos, heading)
-            
-            for cmd in commands:
-                print(f"Sending command: {cmd}")
-                client_socket.send(cmd.encode())  # Send command
-                time.sleep(1)  # Small delay to ensure robot processes one command at a time
-            
-            # Update current position and heading
-            current_pos = target_pos
-            heading = desired_heading
-            
-    except ConnectionRefusedError:
-        print("Could not connect to EV3. Is the server running?")
-    finally:
-        client_socket.close()
-        print("Disconnected from EV3.")
+def send_path(host, port, path, initial_heading):
+    heading = CARDINAL_ANGLE[initial_heading]
+    buffer_dist = 0.0  # accumulate straight‐line distance
 
-# Example path hardcoded
-heading = 'S' # South
-path = [(1, 1), (2, 1), (3, 1), (3, 0), (3, -1), (2, -1)]
-send_path("10.225.58.57", 12345, path, heading)
+    with socket.socket() as sock:
+        sock.connect((host, port))
+        current = path[0]
+
+        for nxt in path[1:]:
+            dx = (nxt[0] - current[0]) * CM_PER_UNIT
+            dy = (nxt[1] - current[1]) * CM_PER_UNIT
+
+            desired = math.degrees(math.atan2(dy, dx))
+            δ = shortest_angle_diff(desired, heading)
+            dist = math.hypot(dx, dy)
+
+            if abs(δ) > 1e-6:
+                # 1) If we were buffering a straight run, flush it now
+                if buffer_dist > 0:
+                    cmd = {"distance": buffer_dist}
+                    sock.send((json.dumps(cmd) + "\n").encode())
+                    print("Sent merged forward:", buffer_dist, "cm")
+                    buffer_dist = 0.0
+
+                # 2) Send the turn
+                cmd = {"turn": δ}
+                sock.send((json.dumps(cmd) + "\n").encode())
+                print(f"Sent turn: {δ:.1f}°")
+                heading = (heading + δ) % 360
+
+            # If δ == 0, we’re still going straight—buffer it
+            buffer_dist += dist
+            current = nxt
+
+        # Flush any final straight run
+        if buffer_dist > 0:
+            cmd = {"distance": buffer_dist}
+            sock.send((json.dumps(cmd) + "\n").encode())
+            print("Sent final merged forward:", buffer_dist, "cm")
+
+        print("Done sending path.")
+
+if __name__ == "__main__":
+    # Example usage:
+    path = [(1,1), (2,1), (3,1), (3,0), (3,-1), (2,-1)] #turn test
+    #path = [(1,1), (2,1), (3,1), (4,1), (5,1), (6,1), (7,1)]     # forward test
+    send_path(HOST, PORT, path, initial_heading='E')
