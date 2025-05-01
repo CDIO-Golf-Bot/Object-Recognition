@@ -61,10 +61,10 @@ class RoboFlowGridTest:
                 print(f"Corner {len(self.calibration_points)} set: ({x}, {y})")
             if len(self.calibration_points) == 4:
                 dst_points = np.array([
-                    [0, 0],
-                    [self.real_width_cm, 0],
-                    [self.real_width_cm, self.real_height_cm],
-                    [0, self.real_height_cm]
+                    [0, self.real_height_cm],         # camera TL  ← mapped to bottom-left
+                    [self.real_width_cm, self.real_height_cm],  # camera TR → bottom-right
+                    [self.real_width_cm, 0],          # camera BR → top-right
+                    [0, 0]                            # camera BL → top-left
                 ], dtype="float32")
                 src_points = np.array(self.calibration_points, dtype="float32")
                 self.homography_matrix = cv2.getPerspectiveTransform(dst_points, src_points)
@@ -139,9 +139,13 @@ class RoboFlowGridTest:
         pt = np.array([[[px, py]]], dtype="float32")
         inv_h = np.linalg.inv(self.homography_matrix)
         real_pt = cv2.perspectiveTransform(pt, inv_h)[0][0]
-        return real_pt
+        x_cm, y_cm = real_pt
+        # flip y:
+        y_cm = self.real_height_cm - y_cm
+        return x_cm, y_cm
 
     def cm_to_grid_coords(self, x_cm, y_cm):
+        # since y_cm is already flipped above, you can do:
         return int(x_cm // self.grid_spacing_cm), int(y_cm // self.grid_spacing_cm)
 
     def heuristic(self, a, b):
@@ -221,15 +225,19 @@ class RoboFlowGridTest:
                 segment = segment[1:]
             self.full_path.extend(segment)
 
-        # Print and emit the path
-        print(f"path = {self.full_path}")  # e.g. path = [(1,1),(2,1),...]
-        # if not self.route_queue.full():
-        #     self.route_queue.put(full_path)
+        # # Print and emit the path
+        # print(f"path = {self.full_path}")  # e.g. path = [(1,1),(2,1),...]
+        # # if not self.route_queue.full():
+        # #     self.route_queue.put(full_path)
 
-        # Debug: print computed route (in centimeters)
-        print("Computed route (in cm):", route)
-        heading = 'S'  # Example heading, adjust as needed
-        send_path("10.225.58.57", 12345, self.full_path, heading)
+        # # Debug: print computed route (in centimeters)
+        # print("Computed route (in cm):", route)
+        # heading = 'S'  # Example heading, adjust as needed
+        # send_path("10.225.58.57", 12345, self.full_path, heading)
+        # Store but do NOT send yet
+
+        self.full_grid_path = self.full_path
+
 
         overlay = frame.copy()
         path_color = (0, 255, 255)
@@ -309,6 +317,14 @@ class RoboFlowGridTest:
                 elif key == ord('2'):
                     self.selected_goal = 'B'
                     print("✅ Selected Goal B")
+                elif key == ord('s'):
+                    # Send the stored path on demand
+                    if self.full_grid_path:
+                        self.heading = 'N'
+                        send_path("10.225.58.57", 12345, self.full_grid_path, self.heading)
+                        print(f"📨 Path sent: {self.full_grid_path}")
+                    else:
+                        print("⚠️ No path calculated yet to send.")
 
     def get_path(self):
         return getattr(self, 'full_path', [])
