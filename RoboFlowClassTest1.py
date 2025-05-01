@@ -61,10 +61,10 @@ class RoboFlowGridTest:
                 print(f"Corner {len(self.calibration_points)} set: ({x}, {y})")
             if len(self.calibration_points) == 4:
                 dst_points = np.array([
-                    [0, self.real_height_cm],         # camera TL  ← mapped to bottom-left
-                    [self.real_width_cm, self.real_height_cm],  # camera TR → bottom-right
-                    [self.real_width_cm, 0],          # camera BR → top-right
-                    [0, 0]                            # camera BL → top-left
+                    [0, 0],
+                    [self.real_width_cm, 0],
+                    [self.real_width_cm, self.real_height_cm],
+                    [0, self.real_height_cm]                           # camera BL → top-left
                 ], dtype="float32")
                 src_points = np.array(self.calibration_points, dtype="float32")
                 self.homography_matrix = cv2.getPerspectiveTransform(dst_points, src_points)
