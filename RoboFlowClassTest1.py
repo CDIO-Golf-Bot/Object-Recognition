@@ -14,6 +14,7 @@ class RoboFlowGridTest:
         self.rf = Roboflow(api_key="7kMjalIwU9TqGmKM0g4i")
         self.project = self.rf.workspace("pingpong-fafrv").project("pingpongdetector-rqboj")
         self.model = self.project.version(2).model
+        print("Model classes:", self.model.model.names)
 
         self.class_colors = {}
 
