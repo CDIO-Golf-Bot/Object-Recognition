@@ -26,23 +26,6 @@ collecting = False
 delivering = False
 motor_thread = None  # Track the active motor thread
 
-def monitor_gyro():
-    gyro.mode = 'GYRO-RATE'
-    angle = 0
-    last_time = time.time()
-    print("Starting manual integration using GYRO-RATE...")
-    
-    while True:
-        rate = gyro.value()  # deg/sec
-        current_time = time.time()
-        dt = current_time - last_time
-        angle += rate * dt  # degrees
-        last_time = current_time
-        print("Estimated angle: {:.2f} deg (rate: {} deg/s)".format(angle, rate))
-        time.sleep(0.1)  # Update every 100ms
-
-
-
 def collect():
     """Runs the motor to collect while the flag is True."""
     global collecting
@@ -102,16 +85,32 @@ def handle_motor(command):
         tank_drive.on(-75, -75)
 
     elif command == "right":
-        print("Turning right...")
-        tank_drive.on(-50, 50)
+        print("Turning right 90 degrees...")
+        gyro.mode = 'GYRO-ANG'
+        current_angle = gyro.angle
+        target_angle = current_angle + 88
+        tank_drive.on(-30, 30)  # Clockwise
+        while gyro.angle < target_angle:
+            print("Angle:", gyro.angle)
+            #time.sleep(0.01)
+        tank_drive.off()
 
     elif command == "left":
-        print("Turning left...")
-        tank_drive.on(50, -50)
+        print("Turning left 90 degrees...")
+        gyro.mode = 'GYRO-ANG'
+        current_angle = gyro.angle
+        target_angle = current_angle - 88
+        tank_drive.on(30, -30)  # Counter-clockwise
+        while gyro.angle > target_angle:
+            print("Angle:", gyro.angle)
+            #time.sleep(0.01)
+        tank_drive.off()
+
+
 
     elif command == "stop":
         print("Stopping drive motors...")
-        tank_drive.off()
+        # tank_drive.off()
 
 
 # Create a socket server
@@ -119,10 +118,6 @@ server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server_socket.bind(("0.0.0.0", 12345))
 server_socket.listen(5)
 print("Server listening...")
-
-# Start gyro monitor thread
-gyro_thread = threading.Thread(target=monitor_gyro, daemon=True)
-gyro_thread.start()
 
 while True:
     client_socket, addr = server_socket.accept()

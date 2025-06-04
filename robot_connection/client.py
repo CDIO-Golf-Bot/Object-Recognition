@@ -2,7 +2,7 @@ import socket
 import keyboard
 
 # EV3 IP and Port
-HOST = "10.41.178.57"  # Replace with your EV3's IP address
+HOST = "10.137.48.57"  # Replace with your EV3's IP address
 PORT = 12345
 
 # Create a persistent connection

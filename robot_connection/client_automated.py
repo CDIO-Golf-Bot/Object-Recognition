@@ -3,7 +3,7 @@ import math
 import json
 import time
 
-HOST = "10.225.58.57"
+HOST = "10.137.48.57"
 PORT = 12345
 CM_PER_UNIT = 2.0
 CARDINAL_ANGLE = {'E': 0.0, 'N': 90.0, 'W': 180.0, 'S': 270.0}
