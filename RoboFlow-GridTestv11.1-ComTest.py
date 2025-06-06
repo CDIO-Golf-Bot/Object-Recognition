@@ -12,7 +12,7 @@ import itertools
 # === Roboflow Model Initialization ===
 rf = Roboflow(api_key="7kMjalIwU9TqGmKM0g4i")
 project = rf.workspace("pingpong-fafrv").project("pingpongdetector-rqboj")
-model = project.version(1).model
+model = project.version(3).model
 
 # === Video Capture Setup ===
 cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)
@@ -36,6 +36,28 @@ grid_overlay          = None
 real_width_cm   = 180
 real_height_cm  = 120
 grid_spacing_cm = 2
+
+# === Inflation for 10cm clearance ===
+def inflate_obstacles(raw_obstacles, radius_cells, grid_w, grid_h):
+    """
+    Given:
+      • raw_obstacles: set of (gx, gy) cells that are true obstacles,
+      • radius_cells: how many cells to expand around each obstacle,
+      • grid_w, grid_h: maximum grid indices,
+    returns a new set containing every cell within Chebyshev distance ≤ radius_cells
+    of any raw obstacle.
+    """
+    inflated = set()
+    for (gx, gy) in raw_obstacles:
+        for dx in range(-radius_cells, radius_cells + 1):
+            for dy in range(-radius_cells, radius_cells + 1):
+                nx, ny = gx + dx, gy + dy
+                if 0 <= nx <= grid_w and 0 <= ny <= grid_h:
+                    inflated.add((nx, ny))
+    return inflated
+
+# Compute how many grid cells correspond to a 10 cm margin:
+radius_cells = int(10 / grid_spacing_cm)  # 10 cm / 2 cm per cell = 5 cells
 
 # === Grid & Obstacles ===
 obstacles = set()
@@ -172,6 +194,9 @@ def compute_best_route_for_four(four_balls, goal_name):
     goal_point_cm = goal_range[goal_name][0]  # (180,60)
     goal_cell = cm_to_grid_coords(goal_point_cm[0], goal_point_cm[1])
 
+    # Build inflated obstacle set once:
+    inflated_obs = inflate_obstacles(obstacles, radius_cells, grid_w, grid_h)
+
     # Build point list for pairwise distances: [start] + ball_cells
     points = [start_cell] + ball_cells
     n = len(points)  # 1 + up to 4
@@ -182,7 +207,7 @@ def compute_best_route_for_four(four_balls, goal_name):
         for j in range(i+1, n):
             pi = points[i]
             pj = points[j]
-            path = astar(pi, pj, grid_w, grid_h, obstacles)
+            path = astar(pi, pj, grid_w, grid_h, inflated_obs)
             cost = len(path)
             distance_map[(i, j)] = (cost, path)
             distance_map[(j, i)] = (cost, list(reversed(path)))
@@ -190,7 +215,7 @@ def compute_best_route_for_four(four_balls, goal_name):
     # Precompute ball_i → goal distance & path
     ball_to_goal_map = {}
     for bi, bcell in enumerate(ball_cells, start=1):
-        path_bg = astar(bcell, goal_cell, grid_w, grid_h, obstacles)
+        path_bg = astar(bcell, goal_cell, grid_w, grid_h, inflated_obs)
         cost_bg = len(path_bg)
         ball_to_goal_map[bi] = (cost_bg, path_bg)
 
@@ -303,17 +328,21 @@ def draw_full_route(frame, ball_positions):
     pending_route = route_cm
 
     # Draw that route on top of the frame
-    overlay = frame.copy()
+    overlay   = frame.copy()
     path_color = (0, 255, 255)
-    total_cm = 0
+    total_cm  = 0
 
     grid_w = real_width_cm // grid_spacing_cm
     grid_h = real_height_cm // grid_spacing_cm
 
+    # Build the inflated obstacle set once here:
+    inflated_obs = inflate_obstacles(obstacles, radius_cells, grid_w, grid_h)
+
     for i in range(len(route_cm) - 1):
         start_cell = cm_to_grid_coords(*route_cm[i])
         end_cell   = cm_to_grid_coords(*route_cm[i + 1])
-        path_cells = astar(start_cell, end_cell, grid_w, grid_h, obstacles)
+        # Use inflated_obs instead of raw obstacles
+        path_cells = astar(start_cell, end_cell, grid_w, grid_h, inflated_obs)
         if not path_cells:
             continue
 
@@ -408,7 +437,7 @@ def send_path(ip: str, port: int, grid_path: list, heading: str):
 
             payload = {
                 "heading": heading,
-                "path": [ [int(gx), int(gy)] for (gx, gy) in grid_path ]
+                "path": [[int(gx), int(gy)] for (gx, gy) in grid_path]
             }
             data = json.dumps(payload).encode("utf-8")
 
@@ -484,7 +513,7 @@ def process_frames():
                     ignored_area['x_min'] <= cx_cm <= ignored_area['x_max']
                     and ignored_area['y_min'] <= cy_cm <= ignored_area['y_max']
                 ):
-                    ball_positions_cm.append((cx_cm, cy_cm, lbl)) 
+                    ball_positions_cm.append((cx_cm, cy_cm, lbl))
 
         # --- 2) DETECT RED CROSS (WITH SIZE FILTER) ---
         if homography_matrix is not None:
