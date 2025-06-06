@@ -446,76 +446,71 @@ def process_frames():
 
         original = frame.copy()
         small    = cv2.resize(frame, (416, 416))
-        preds_v3    = model_v3.predict(small, confidence=30, overlap=20).json()
 
+        # --- 1) DETECT BALLS ---
+        preds_v1    = model_v1.predict(small, confidence=30, overlap=20).json()
         h_full, w_full = original.shape[:2]
         scale_x = w_full / 416
         scale_y = h_full / 416
 
-        # --- 1) DETECT BALLS ---
+        
         ball_positions_cm.clear()
         for d in preds_v3.get('predictions', []):
+            lbl = d['class']
+            if "ball" in lbl.lower():
+                cx  = int(d['x'] * scale_x)
+                cy  = int(d['y'] * scale_y)
+                w   = int(d['width'] * scale_x)
+                h   = int(d['height'] * scale_y)
+                ll  = lbl.strip().lower()
+
+                if "white" in ll:
+                    color = (200, 200, 255)
+                elif "orange" in ll:
+                    color = (0, 165, 255)
+                else:
+                    color = class_colors.setdefault(
+                        lbl,
+                        (random.randint(0,255), random.randint(0,255), random.randint(0,255))
+                    )
+
+                x1, y1 = cx - w//2, cy - h//2
+                x2, y2 = cx + w//2, cy + h//2
+                cv2.rectangle(original, (x1, y1), (x2, y2), color, 2)
+                cv2.putText(original, lbl, (x1, y1 - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+
+                cm_coords = pixel_to_cm(cx, cy)
+                if cm_coords is not None:
+                    cx_cm, cy_cm = cm_coords
+                    if not (
+                        ignored_area['x_min'] <= cx_cm <= ignored_area['x_max']
+                        and ignored_area['y_min'] <= cy_cm <= ignored_area['y_max']
+                    ):
+                        ball_positions_cm.append((cx_cm, cy_cm, lbl)) 
+
+        # Ignore balls in v3
+        preds_v3 = model_v3.predict(small, confidence=30, overlap=20).json()
+        for d in preds_v1.get('predictions', []):
+            lbl = d['class']
+            if "ball" in lbl.lower():
+                continue
             cx  = int(d['x'] * scale_x)
             cy  = int(d['y'] * scale_y)
             w   = int(d['width'] * scale_x)
             h   = int(d['height'] * scale_y)
-            lbl = d['class']
-            conf = d['confidence']
-            ll  = lbl.strip().lower()
-
-
-            ############################################################
-
-            if lbl.lower().find("ball") != -1 and conf < 0.5:
-                preds_v1 = model_v1.predict(small, confidence=30, overlap=20).json()
-
-                best_match = None
-                best_dist = float('inf')
-                for d1 in preds_v1.get('predictions', []):
-                    if d1['class'].lower().find("ball") != -1:
-                        c1x = int(d1['x'] * scale_x)
-                        c1y = int(d1['y'] * scale_y)
-                        dist = (c1x - cx)**2 + (c1y - cy)**2
-                        if dist < best_dist:
-                            best_dist = dist
-                            best_match = d1
-                if best_match and best_match['confidence'] > conf:
-                    # Use the v1 detection if it's more confident
-                    cx = int(best_match['x'] * scale_x)
-                    cy = int(best_match['y'] * scale_y)
-                    w = int(best_match['width'] * scale_x)
-                    h = int(best_match['height'] * scale_y)
-                    lbl = best_match['class']
-                    conf = best_match['confidence']
-
-            ############################################################
-
-            if "white" in ll:
-                color = (200, 200, 255)
-            elif "orange" in ll:
-                color = (0, 165, 255)
-            else:
-                color = class_colors.setdefault(
-                    lbl,
-                    (random.randint(0,255), random.randint(0,255), random.randint(0,255))
-                )
-
+            color = class_colors.setdefault(
+                lbl,
+                (random.randint(0,255), random.randint(0,255), random.randint(0,255))
+            )
             x1, y1 = cx - w//2, cy - h//2
             x2, y2 = cx + w//2, cy + h//2
             cv2.rectangle(original, (x1, y1), (x2, y2), color, 2)
             cv2.putText(original, lbl, (x1, y1 - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
-            cm_coords = pixel_to_cm(cx, cy)
-            if cm_coords is not None:
-                cx_cm, cy_cm = cm_coords
-                if not (
-                    ignored_area['x_min'] <= cx_cm <= ignored_area['x_max']
-                    and ignored_area['y_min'] <= cy_cm <= ignored_area['y_max']
-                ):
-                    ball_positions_cm.append((cx_cm, cy_cm, lbl)) 
-
         # --- 2) DETECT RED CROSS (WITH SIZE FILTER) ---
+        preds_v3 = model_v3.predict(small, confidence=30, overlap=20).json()
         if homography_matrix is not None:
             hsv = cv2.cvtColor(original, cv2.COLOR_BGR2HSV)
             lower_red1 = np.array([0, 120, 70])
