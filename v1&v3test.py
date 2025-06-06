@@ -466,7 +466,7 @@ def process_frames():
 
             ############################################################
 
-            if lbl.lower().find("ball") != -1 and conf < 0.5:
+            if lbl.lower().find("ball") != -1 and conf < 0.9:
                 preds_v1 = model_v1.predict(small, confidence=30, overlap=20).json()
 
                 best_match = None
