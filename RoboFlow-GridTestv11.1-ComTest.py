@@ -12,7 +12,7 @@ import itertools
 # === Roboflow Model Initialization ===
 rf = Roboflow(api_key="7kMjalIwU9TqGmKM0g4i")
 project = rf.workspace("pingpong-fafrv").project("pingpongdetector-rqboj")
-model = project.version(1).model
+model = project.version(3).model
 
 # === Video Capture Setup ===
 cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)
