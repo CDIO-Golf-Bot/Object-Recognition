@@ -583,17 +583,35 @@ def process_frames():
             if "ball" in lbl:
                 continue  # skip balls here—already handled
 
+            # 1) draw every non-ball (including robot)
             cx  = int(d['x'] * scale_x)
             cy  = int(d['y'] * scale_y)
             w   = int(d['width'] * scale_x)
             h   = int(d['height'] * scale_y)
-
-            color = class_colors.setdefault(lbl, (random.randint(0,255), random.randint(0,255), random.randint(0,255)))
+            color = class_colors.setdefault(lbl,
+                        (random.randint(0,255), random.randint(0,255), random.randint(0,255)))
             x1, y1 = cx - w//2, cy - h//2
             x2, y2 = cx + w//2, cy + h//2
             cv2.rectangle(original, (x1, y1), (x2, y2), color, 2)
             cv2.putText(original, lbl, (x1, y1 - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+
+            # 2) but don’t turn the robot into an obstacle
+            if "robot" in lbl:
+                continue
+
+            # 3) now sample inside bounding box every 10px → convert to cm → grid → add to obstacles
+            if homography_matrix is not None:
+                max_gx = REAL_WIDTH_CM // GRID_SPACING_CM
+                max_gy = REAL_HEIGHT_CM // GRID_SPACING_CM
+                for sx in range(x1, x2, 10):
+                    for sy in range(y1, y2, 10):
+                        real = pixel_to_cm(sx, sy)
+                        if real is None:
+                            continue
+                        gx, gy = cm_to_grid_coords(real[0], real[1])
+                        if 0 <= gx <= max_gx and 0 <= gy <= max_gy:
+                            obstacles.add((gx, gy))
 
             # Sample inside bounding box every 10px → convert to cm → grid → add to obstacles
             if homography_matrix is not None:

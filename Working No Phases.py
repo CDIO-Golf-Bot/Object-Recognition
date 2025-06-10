@@ -14,7 +14,7 @@ from roboflow import Roboflow
 ROBOFLOW_API_KEY = "7kMjalIwU9TqGmKM0g4i"
 WORKSPACE_NAME   = "pingpong-fafrv"
 PROJECT_NAME     = "newpingpongdetector"
-VERSION          = 1
+VERSION          = 2
 
 CAMERA_INDEX     = 1
 FRAME_WIDTH      = 1280
