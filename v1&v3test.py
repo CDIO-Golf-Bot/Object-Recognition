@@ -455,7 +455,7 @@ def process_frames():
 
         
         ball_positions_cm.clear()
-        for d in preds_v3.get('predictions', []):
+        for d in preds_v1.get('predictions', []):
             lbl = d['class']
             if "ball" in lbl.lower():
                 cx  = int(d['x'] * scale_x)
@@ -491,7 +491,7 @@ def process_frames():
 
         # Ignore balls in v3
         preds_v3 = model_v3.predict(small, confidence=30, overlap=20).json()
-        for d in preds_v1.get('predictions', []):
+        for d in preds_v3.get('predictions', []):
             lbl = d['class']
             if "ball" in lbl.lower():
                 continue

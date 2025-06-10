@@ -3,23 +3,98 @@ import random
 import threading
 import numpy as np
 import heapq
-from queue import Queue, Empty
-from roboflow import Roboflow
+import itertools
 import socket
 import json
-import itertools
+from queue import Queue, Empty
+from roboflow import Roboflow
+
+# === CONFIGURABLE CONSTANTS ===
+
+# 1) Roboflow credentials and version
+ROBOFLOW_API_KEY = "7kMjalIwU9TqGmKM0g4i"
+WORKSPACE_NAME   = "pingpong-fafrv"
+PROJECT_NAME     = "newpingpongdetector"
+VERSION          = 1   # ← use same version for both ball and obstacle detection
+
+# 2) Video capture settings
+CAMERA_INDEX     = 1
+FRAME_WIDTH      = 1280
+FRAME_HEIGHT     = 720
+FRAMES_PER_SEC   = 30
+BUFFER_SIZE      = 1  # cv2.CAP_PROP_BUFFERSIZE
+
+# 3) Table / grid dimensions (in cm)
+REAL_WIDTH_CM    = 180
+REAL_HEIGHT_CM   = 120
+GRID_SPACING_CM  = 2
+
+# 4) Start & goal definitions (in cm)
+START_POINT_CM = (20, 20)
+GOAL_A_CM      = (REAL_WIDTH_CM, REAL_HEIGHT_CM // 2)  # (180, 60)
+GOAL_B_CM      = None  # Define if needed
+
+GOAL_RANGE = {
+    'A': [GOAL_A_CM],
+    'B': GOAL_B_CM
+}
+
+# 4.1) Obstacle‐buffer (in cm). A* will treat cells within this many cm of any “raw” obstacle as blocked.
+OBSTACLE_BUFFER_CM = 10    # ← adjust to increase/decrease buffer
+
+# 4.2) (Derived) how many grid‐cells that buffer corresponds to:
+BUFFER_CELLS = int(np.ceil(OBSTACLE_BUFFER_CM / GRID_SPACING_CM))
+
+# 5) How many balls we want to route through (max). Change to 3, 5, etc.
+MAX_BALLS_TO_COLLECT = 4   # ← adjust as needed
+
+# 6) Region to ignore (in cm)
+IGNORED_AREA = {
+    'x_min': 50,
+    'x_max': 100,
+    'y_min': 50,
+    'y_max': 100
+}
+
+# 7) Detection thresholds
+CONFIDENCE_THRESHOLD = 0.50    # 50%
+OVERLAP_THRESHOLD    = 0.05    # 5%
+MIN_RED_AREA_PX      = 500     # Minimum pixel area for red‐cross contour
+MAX_RED_AREA_CM2     = 400     # Maximum approximate area (cm²) for red contour
+
+# 8) Frame skipping (process every Nth frame)
+SKIP_FRAMES = 3
+
+# 9) Robot communication parameters
+ROBOT_IP      = "10.225.58.57"
+ROBOT_PORT    = 12345
+ROBOT_HEADING = "N"
+
+# 10) Visualization & drawing parameters
+OBSTACLE_DRAW_RADIUS_PX = 6
+GRID_LINE_COLOR         = (100, 100, 100)
+PATH_COLOR              = (0, 255, 255)
+TEXT_COLOR              = (0, 255, 255)
+
+# 11) Color map seed (for reproducible random colors)
+RANDOM_SEED = 42
+
+# === END CONFIGURABLE CONSTANTS ===
 
 # === Roboflow Model Initialization ===
-rf = Roboflow(api_key="7kMjalIwU9TqGmKM0g4i")
-project = rf.workspace("pingpong-fafrv").project("newpingpongdetector")
-model = project.version(1).model
+rf = Roboflow(api_key=ROBOFLOW_API_KEY)
+project = rf.workspace(WORKSPACE_NAME).project(PROJECT_NAME)
+
+# We use two model objects (same version) for clarity:
+model_v1 = project.version(VERSION).model  # for ball detection
+model_v3 = project.version(VERSION).model  # for everything else
 
 # === Video Capture Setup ===
-cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)
-cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-cap.set(cv2.CAP_PROP_FPS, 30)
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+cap = cv2.VideoCapture(CAMERA_INDEX, cv2.CAP_DSHOW)
+cap.set(cv2.CAP_PROP_BUFFERSIZE, BUFFER_SIZE)
+cap.set(cv2.CAP_PROP_FPS, FRAMES_PER_SEC)
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
 
 # === Threading & Queues ===
 frame_queue  = Queue(maxsize=1)
@@ -32,44 +107,17 @@ homography_matrix     = None
 inv_homography_matrix = None
 grid_overlay          = None
 
-# === Real‐World Dimensions (cm) ===
-real_width_cm   = 180
-real_height_cm  = 120
-grid_spacing_cm = 2
-
-# === Grid & Obstacles ===
-obstacles = set()
-
-# === Ball Positions & Route Caching ===
-ball_positions_cm       = []
-cached_route            = None
+# === Obstacles & Caching ===
+obstacles               = set()   # set of (gx, gy) cells
+ball_positions_cm       = []      # will store 5-tuples: (cx_cm, cy_cm, lbl, cx_px, cy_px)
 last_ball_positions_cm  = []
+cached_route            = None
 last_selected_goal      = None
 pending_route           = None
-full_grid_path          = []  # Store the raw grid‐cell path for sending
-
-# === Start & Goal Definitions ===
-start_point_cm = (20, 20)
-# Now go to the center of the goal at y = 60cm, x at table edge (180cm)
-goal_range = {
-    'A': [(real_width_cm, 60)],
-    'B': None  # Define B if you ever need it
-}
-selected_goal = 'A'
-
-# === Ignored Detection Area (cm) ===
-ignored_area = {
-    'x_min': 50,
-    'x_max': 100,
-    'y_min': 50,
-    'y_max': 100
-}
-
-# === Frame Skipping ===
-skip_frames = 3
+full_grid_path          = []
 
 # === Color Mapping for Classes ===
-random.seed(42)
+random.seed(RANDOM_SEED)
 class_colors = {}
 
 # === Utility Functions ===
@@ -91,16 +139,16 @@ def pixel_to_cm(px, py):
     return real_pt[0], real_pt[1]
 
 def cm_to_grid_coords(x_cm, y_cm):
-    return int(x_cm // grid_spacing_cm), int(y_cm // grid_spacing_cm)
+    return int(x_cm // GRID_SPACING_CM), int(y_cm // GRID_SPACING_CM)
 
 def heuristic(a, b):
     return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
 def astar(start, goal, grid_w, grid_h, obstacles_set):
     """
-    Simple A* on 4‐neighborhood (no diagonals).
-    start/goal are grid‐cell tuples, e.g. (gx, gy).
-    Returns a list of grid‐cell coordinates, or [] if no path.
+    A* on 4-neighborhood (no diagonals). 
+    start/goal are grid-cell tuples, e.g. (gx, gy).
+    Returns a list of grid-cell coords, or [] if no path.
     """
     open_set  = [(0, start)]
     came_from = {}
@@ -130,124 +178,146 @@ def astar(start, goal, grid_w, grid_h, obstacles_set):
     return []
 
 def significant_change(ball_positions, last_positions, tol_cm=1.0):
+    """
+    Determine if the chosen balls have changed significantly.
+    Both lists are lists of 5-tuples: (x_cm, y_cm, lbl, cx_px, cy_px).
+    """
     if len(ball_positions) != len(last_positions):
         return True
-    for (x, y, lbl), (lx, ly, llbl) in zip(ball_positions, last_positions):
+    for (x, y, lbl, _, _), (lx, ly, llbl, _, _) in zip(ball_positions, last_positions):
         if lbl != llbl or abs(x - lx) > tol_cm or abs(y - ly) > tol_cm:
             return True
     return False
 
-def pick_top_four(balls, start_cm):
+def pick_top_n(balls, start_cm, n=MAX_BALLS_TO_COLLECT):
     """
-    Given a list of (x_cm, y_cm, label), pick the four closest to `start_cm`
-    in terms of Manhattan distance on the grid. Returns up to 4 balls.
+    Given a list of (x_cm, y_cm, label, cx_px, cy_px),
+    pick the n closest to start_cm by Manhattan distance on the grid.
+    Returns up to n of those same 5-tuples.
     """
     sx_g, sy_g = cm_to_grid_coords(*start_cm)
 
     def manh_dist(ball):
-        bx_g, by_g = cm_to_grid_coords(ball[0], ball[1])
+        bx_cm, by_cm = ball[0], ball[1]
+        bx_g, by_g = cm_to_grid_coords(bx_cm, by_cm)
         return abs(sx_g - bx_g) + abs(sy_g - by_g)
 
     sorted_balls = sorted(balls, key=manh_dist)
-    return sorted_balls[:4]
+    return sorted_balls[:n]
 
-def compute_best_route_for_four(four_balls, goal_name):
+def get_expanded_obstacles(raw_obstacles):
     """
-    Given exactly up to four balls (list of (x_cm, y_cm, label)) and a goal name ('A'),
-    perform a small‐scale TSP:
-      start_point_cm → (ball1 → ball2 → ball3 → ball4 in some order) → fixed goal (180, 60).
-    Returns both:
-      - route_cm: a list of (x_cm, y_cm) points in the chosen order (start, each ball, goal)
-      - full_grid_path: the combined grid‐cell path (list of (gx, gy) tuples) from A* along each segment
+    Given a set of raw obstacle cells (each as (gx, gy)),
+    return a new set that also includes any cell within BUFFER_CELLS (Chebyshev)
+    of each raw obstacle.
     """
-    grid_w = real_width_cm // grid_spacing_cm
-    grid_h = real_height_cm // grid_spacing_cm
+    expanded = set()
+    for (gx, gy) in raw_obstacles:
+        for dx in range(-BUFFER_CELLS, BUFFER_CELLS + 1):
+            for dy in range(-BUFFER_CELLS, BUFFER_CELLS + 1):
+                nx, ny = gx + dx, gy + dy
+                max_gx = REAL_WIDTH_CM // GRID_SPACING_CM
+                max_gy = REAL_HEIGHT_CM // GRID_SPACING_CM
+                if 0 <= nx <= max_gx and 0 <= ny <= max_gy:
+                    expanded.add((nx, ny))
+    return expanded
 
-    # Convert start to grid cell:
-    start_cell = cm_to_grid_coords(*start_point_cm)
-    # Convert each ball center to grid cell:
-    ball_cells = [cm_to_grid_coords(ball[0], ball[1]) for ball in four_balls]
+def compute_best_route(balls_list, goal_name):
+    """
+    balls_list: list of 5-tuples (x_cm, y_cm, label, cx_px, cy_px)
+    Perform a brute-force TSP: START → each ball → GOAL.
+    Returns:
+      - route_cm: list of (x_cm, y_cm) in order
+      - full_grid_path: flattened list of grid-cell coords via A*
+    """
+    if len(balls_list) == 0:
+        return [], []
 
-    # Fixed goal center: (180,60) → grid cell:
-    goal_point_cm = goal_range[goal_name][0]  # (180,60)
+    grid_w = REAL_WIDTH_CM // GRID_SPACING_CM
+    grid_h = REAL_HEIGHT_CM // GRID_SPACING_CM
+
+    start_cell = cm_to_grid_coords(*START_POINT_CM)
+    ball_cells = [cm_to_grid_coords(b[0], b[1]) for b in balls_list]
+
+    goal_point_cm = GOAL_RANGE[goal_name][0]
     goal_cell = cm_to_grid_coords(goal_point_cm[0], goal_point_cm[1])
 
-    # Build point list for pairwise distances: [start] + ball_cells
+    # Build [start_cell] + ball_cells
     points = [start_cell] + ball_cells
-    n = len(points)  # 1 + up to 4
+    n = len(points)
+    raw_obs = obstacles
+    expanded_obs = get_expanded_obstacles(raw_obs)
 
-    # Precompute A* distances & paths between all pairs in points
+    # Precompute pairwise costs & paths among start & balls
     distance_map = {}
     for i in range(n):
-        for j in range(i+1, n):
-            pi = points[i]
-            pj = points[j]
-            path = astar(pi, pj, grid_w, grid_h, obstacles)
-            cost = len(path)
-            distance_map[(i, j)] = (cost, path)
-            distance_map[(j, i)] = (cost, list(reversed(path)))
+        for j in range(i + 1, n):
+            pi, pj = points[i], points[j]
+            path_ij = astar(pi, pj, grid_w, grid_h, expanded_obs)
+            cost_ij = len(path_ij)
+            distance_map[(i, j)] = (cost_ij, path_ij)
+            distance_map[(j, i)] = (cost_ij, list(reversed(path_ij)))
 
-    # Precompute ball_i → goal distance & path
+    # Precompute ball_i → goal
     ball_to_goal_map = {}
-    for bi, bcell in enumerate(ball_cells, start=1):
-        path_bg = astar(bcell, goal_cell, grid_w, grid_h, obstacles)
+    for idx, bcell in enumerate(ball_cells, start=1):
+        path_bg = astar(bcell, goal_cell, grid_w, grid_h, expanded_obs)
         cost_bg = len(path_bg)
-        ball_to_goal_map[bi] = (cost_bg, path_bg)
+        ball_to_goal_map[idx] = (cost_bg, path_bg)
 
-    # Now brute‐force permutations of {1..len(ball_cells)}
     best_sequence = None
-    best_total_cost = None
+    best_cost = None
     best_segments = None
 
-    ball_indices = list(range(1, len(ball_cells) + 1))  # [1,2,3,4]
+    ball_indices = list(range(1, len(ball_cells) + 1))
     for perm in itertools.permutations(ball_indices):
         total_cost = 0
         segments = []
+
         # start → first ball
         c01, p01 = distance_map[(0, perm[0])]
         total_cost += c01
         segments.append(((0, perm[0]), p01))
+
         # between balls
-        for k in range(len(perm)-1):
-            i = perm[k]
-            j = perm[k+1]
-            c, p = distance_map[(i, j)]
-            total_cost += c
-            segments.append(((i, j), p))
+        for k in range(len(perm) - 1):
+            i_idx, j_idx = perm[k], perm[k + 1]
+            c_ij, p_ij = distance_map[(i_idx, j_idx)]
+            total_cost += c_ij
+            segments.append(((i_idx, j_idx), p_ij))
+
         # last ball → goal
-        c_bg, p_bg = ball_to_goal_map[perm[-1]]
-        total_cost += c_bg
-        segments.append(((perm[-1], 'G'), p_bg))
-        if best_total_cost is None or total_cost < best_total_cost:
-            best_total_cost = total_cost
+        c_last, p_last = ball_to_goal_map[perm[-1]]
+        total_cost += c_last
+        segments.append(((perm[-1], 'G'), p_last))
+
+        if best_cost is None or total_cost < best_cost:
+            best_cost = total_cost
             best_sequence = perm
             best_segments = list(segments)
 
-    if best_sequence is None:
-        return [], []
-
-    # Reconstruct route_cm: start_cm → four ball centers → goal_cm
-    route_cm = [start_point_cm]
+    # Reconstruct route_cm: START → chosen balls → GOAL
+    route_cm = [START_POINT_CM]
     for bi in best_sequence:
-        bx_cm, by_cm, _ = four_balls[bi-1]
+        bx_cm, by_cm, _ = balls_list[bi - 1][0:3]
         route_cm.append((bx_cm, by_cm))
     route_cm.append(goal_point_cm)
 
-    # Flatten grid paths
+    # Flatten grid‐cells
     full_path_cells = []
-    for (_, _), path_cells in best_segments:
-        full_path_cells.extend(path_cells)
+    for (_, _), segment_cells in best_segments:
+        full_path_cells.extend(segment_cells)
 
     return route_cm, full_path_cells
 
 def create_and_cache_grid_overlay():
     global homography_matrix, grid_overlay
-    # Build a flat “real‐world” canvas showing the 2 cm‐spaced grid
-    canvas = np.zeros((real_height_cm + 1, real_width_cm + 1, 3), dtype=np.uint8)
-    for x_cm in range(0, real_width_cm + 1, grid_spacing_cm):
-        cv2.line(canvas, (x_cm, 0), (x_cm, real_height_cm), (100, 100, 100), 1)
-    for y_cm in range(0, real_height_cm + 1, grid_spacing_cm):
-        cv2.line(canvas, (0, y_cm), (real_width_cm, y_cm), (100, 100, 100), 1)
+    # Build a flat “real-world” canvas showing the 2 cm-spaced grid
+    canvas = np.zeros((REAL_HEIGHT_CM + 1, REAL_WIDTH_CM + 1, 3), dtype=np.uint8)
+    for x_cm in range(0, REAL_WIDTH_CM + 1, GRID_SPACING_CM):
+        cv2.line(canvas, (x_cm, 0), (x_cm, REAL_HEIGHT_CM), GRID_LINE_COLOR, 1)
+    for y_cm in range(0, REAL_HEIGHT_CM + 1, GRID_SPACING_CM):
+        cv2.line(canvas, (0, y_cm), (REAL_WIDTH_CM, y_cm), GRID_LINE_COLOR, 1)
 
     height_px = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     width_px  = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -264,56 +334,62 @@ def draw_metric_grid(frame):
         return frame
     blended = cv2.addWeighted(frame, 1.0, grid_overlay, 0.5, 0)
     for (gx, gy) in obstacles:
-        x_cm, y_cm = gx * grid_spacing_cm, gy * grid_spacing_cm
+        x_cm, y_cm = gx * GRID_SPACING_CM, gy * GRID_SPACING_CM
         pt_cm = np.array([[[x_cm, y_cm]]], dtype="float32")
         pt_px = cv2.perspectiveTransform(pt_cm, homography_matrix)[0][0]
-        cv2.circle(blended, (int(pt_px[0]), int(pt_px[1])), 6, (0, 0, 255), -1)
+        cv2.circle(blended, (int(pt_px[0]), int(pt_px[1])), OBSTACLE_DRAW_RADIUS_PX, (0, 0, 255), -1)
     return blended
 
 def draw_full_route(frame, ball_positions):
-    global cached_route, last_ball_positions_cm, last_selected_goal, pending_route, selected_goal, full_grid_path
+    global cached_route, last_ball_positions_cm, last_selected_goal, pending_route, full_grid_path
 
     if homography_matrix is None:
         return frame
 
-    # 1) Pick exactly four balls (closest by Manhattan on grid)
-    four_balls = pick_top_four(ball_positions, start_point_cm)
+    # 1) Pick up to MAX_BALLS_TO_COLLECT balls (closest by Manhattan on grid)
+    chosen_balls = pick_top_n(ball_positions, START_POINT_CM, n=MAX_BALLS_TO_COLLECT)
+
+    # --- Highlight each chosen ball in pixel‐space ---
+    for (cx_cm, cy_cm, lbl, cx_px, cy_px) in chosen_balls:
+        # Draw a green circle around that ball’s pixel center
+        cv2.circle(frame, (int(cx_px), int(cy_px)), 10, (0, 255, 0), 3)
+        cv2.putText(frame, lbl, (int(cx_px) - 10, int(cy_px) - 15),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
     # 2) Decide if route needs updating
     route_changed = (
         cached_route is None
-        or significant_change(four_balls, last_ball_positions_cm)
-        or selected_goal != last_selected_goal
+        or significant_change(chosen_balls, last_ball_positions_cm)
+        or (last_selected_goal != selected_goal)
     )
 
     if route_changed:
-        if len(ball_positions) > 4:
-            coords = [(round(b[0], 1), round(b[1], 1), b[2]) for b in four_balls]
-            print(f"📋 Using only these four balls: {coords}")
+        if len(ball_positions) > MAX_BALLS_TO_COLLECT:
+            coords = [(round(b[0], 1), round(b[1], 1), b[2]) for b in chosen_balls]
+            print(f"📋 Using only these {MAX_BALLS_TO_COLLECT} balls: {coords}")
 
-        # Compute the best‐TSP route through those four plus fixed goal
-        route_cm, grid_cells = compute_best_route_for_four(four_balls, selected_goal)
-        cached_route = route_cm
-        last_ball_positions_cm = four_balls.copy()
-        last_selected_goal = selected_goal
-        full_grid_path = grid_cells
+        route_cm, grid_cells = compute_best_route(chosen_balls, selected_goal)
+        cached_route            = route_cm
+        last_ball_positions_cm  = chosen_balls.copy()
+        last_selected_goal      = selected_goal
+        full_grid_path          = grid_cells
     else:
         route_cm = cached_route
 
     pending_route = route_cm
 
-    # Draw that route on top of the frame
+    # 3) Draw the A* route on top of the frame
     overlay = frame.copy()
-    path_color = (0, 255, 255)
     total_cm = 0
 
-    grid_w = real_width_cm // grid_spacing_cm
-    grid_h = real_height_cm // grid_spacing_cm
+    grid_w = REAL_WIDTH_CM // GRID_SPACING_CM
+    grid_h = REAL_HEIGHT_CM // GRID_SPACING_CM
 
     for i in range(len(route_cm) - 1):
         start_cell = cm_to_grid_coords(*route_cm[i])
         end_cell   = cm_to_grid_coords(*route_cm[i + 1])
-        path_cells = astar(start_cell, end_cell, grid_w, grid_h, obstacles)
+        expanded_obs = get_expanded_obstacles(obstacles)
+        path_cells = astar(start_cell, end_cell, grid_w, grid_h, expanded_obs)
         if not path_cells:
             continue
 
@@ -324,8 +400,8 @@ def draw_full_route(frame, ball_positions):
             gx0, gy0 = prev_cell
             gx1, gy1 = curr_cell
 
-            x0_cm, y0_cm = gx0 * grid_spacing_cm, gy0 * grid_spacing_cm
-            x1_cm, y1_cm = gx1 * grid_spacing_cm, gy1 * grid_spacing_cm
+            x0_cm, y0_cm = gx0 * GRID_SPACING_CM, gy0 * GRID_SPACING_CM
+            x1_cm, y1_cm = gx1 * GRID_SPACING_CM, gy1 * GRID_SPACING_CM
 
             pt0_cm = np.array([[[x0_cm, y0_cm]]], dtype="float32")
             pt1_cm = np.array([[[x1_cm, y1_cm]]], dtype="float32")
@@ -336,10 +412,10 @@ def draw_full_route(frame, ball_positions):
                 overlay,
                 (int(pt0_px[0]), int(pt0_px[1])),
                 (int(pt1_px[0]), int(pt1_px[1])),
-                path_color,
+                PATH_COLOR,
                 3
             )
-            total_cm += grid_spacing_cm
+            total_cm += GRID_SPACING_CM
 
     cv2.putText(
         overlay,
@@ -347,7 +423,7 @@ def draw_full_route(frame, ball_positions):
         (10, overlay.shape[0] - 20),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.6,
-        path_color,
+        TEXT_COLOR,
         2
     )
     return overlay
@@ -361,9 +437,9 @@ def click_to_set_corners(event, x, y, flags, param):
         if len(calibration_points) == 4 and homography_matrix is None:
             dst_points = np.array([
                 [0, 0],
-                [real_width_cm, 0],
-                [real_width_cm, real_height_cm],
-                [0, real_height_cm]
+                [REAL_WIDTH_CM, 0],
+                [REAL_WIDTH_CM, REAL_HEIGHT_CM],
+                [0, REAL_HEIGHT_CM]
             ], dtype="float32")
             src_points = np.array(calibration_points, dtype="float32")
             homography_matrix    = cv2.getPerspectiveTransform(dst_points, src_points)
@@ -375,8 +451,8 @@ def click_to_set_corners(event, x, y, flags, param):
         pt_cm = pixel_to_cm(x, y)
         if pt_cm is not None:
             gx, gy = cm_to_grid_coords(pt_cm[0], pt_cm[1])
-            max_gx = real_width_cm // grid_spacing_cm
-            max_gy = real_height_cm // grid_spacing_cm
+            max_gx = REAL_WIDTH_CM // GRID_SPACING_CM
+            max_gy = REAL_HEIGHT_CM // GRID_SPACING_CM
             if 0 <= gx <= max_gx and 0 <= gy <= max_gy:
                 if (gx, gy) in obstacles:
                     obstacles.remove((gx, gy))
@@ -386,8 +462,8 @@ def click_to_set_corners(event, x, y, flags, param):
                     print(f"🚧 Added obstacle at: ({gx}, {gy})")
 
 def ensure_outer_edges_walkable():
-    max_x = real_width_cm // grid_spacing_cm
-    max_y = real_height_cm // grid_spacing_cm
+    max_x = REAL_WIDTH_CM // GRID_SPACING_CM
+    max_y = REAL_HEIGHT_CM // GRID_SPACING_CM
     for gx in range(max_x + 1):
         obstacles.discard((gx, 0))
         obstacles.discard((gx, max_y))
@@ -408,10 +484,9 @@ def send_path(ip: str, port: int, grid_path: list, heading: str):
 
             payload = {
                 "heading": heading,
-                "path": [ [int(gx), int(gy)] for (gx, gy) in grid_path ]
+                "path": [[int(gx), int(gy)] for (gx, gy) in grid_path]
             }
             data = json.dumps(payload).encode("utf-8")
-
             length_prefix = len(data).to_bytes(4, byteorder='big')
             sock.sendall(length_prefix + data)
             print(f"📨 Sent path to {ip}:{port} → {len(grid_path)} cells, heading={heading}")
@@ -427,7 +502,7 @@ def capture_frames():
         if not ret:
             break
         frame_count_local += 1
-        if frame_count_local % skip_frames == 0:
+        if frame_count_local % SKIP_FRAMES == 0:
             try:
                 frame_queue.put(frame, timeout=0.02)
             except:
@@ -445,31 +520,36 @@ def process_frames():
 
         original = frame.copy()
         small    = cv2.resize(frame, (416, 416))
-        preds    = model.predict(small, confidence=30, overlap=20).json()
-
         h_full, w_full = original.shape[:2]
         scale_x = w_full / 416
         scale_y = h_full / 416
 
-        # --- 1) DETECT BALLS ---
+        # --- 1) DETECT BALLS (using model_v1) ---
+        preds_v1 = model_v1.predict(
+            small,
+            confidence=int(CONFIDENCE_THRESHOLD * 100),
+            overlap=int(OVERLAP_THRESHOLD * 100)
+        ).json()
+
         ball_positions_cm.clear()
-        for d in preds.get('predictions', []):
+        for d in preds_v1.get('predictions', []):
+            lbl = d['class'].strip().lower()
+            if "ball" not in lbl:
+                continue
+
             cx  = int(d['x'] * scale_x)
             cy  = int(d['y'] * scale_y)
             w   = int(d['width'] * scale_x)
             h   = int(d['height'] * scale_y)
-            lbl = d['class']
-            ll  = lbl.strip().lower()
 
-            if "white" in ll:
+            # Color‐code “ball” boxes
+            if "white" in lbl:
                 color = (200, 200, 255)
-            elif "orange" in ll:
+            elif "orange" in lbl:
                 color = (0, 165, 255)
             else:
-                color = class_colors.setdefault(
-                    lbl,
-                    (random.randint(0,255), random.randint(0,255), random.randint(0,255))
-                )
+                color = class_colors.setdefault(lbl,
+                            (random.randint(0,255), random.randint(0,255), random.randint(0,255)))
 
             x1, y1 = cx - w//2, cy - h//2
             x2, y2 = cx + w//2, cy + h//2
@@ -477,16 +557,58 @@ def process_frames():
             cv2.putText(original, lbl, (x1, y1 - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
+            # Convert center‐pixel → real‐world cm coords
             cm_coords = pixel_to_cm(cx, cy)
             if cm_coords is not None:
                 cx_cm, cy_cm = cm_coords
+                # ignore if inside the “ignored area”
                 if not (
-                    ignored_area['x_min'] <= cx_cm <= ignored_area['x_max']
-                    and ignored_area['y_min'] <= cy_cm <= ignored_area['y_max']
+                    IGNORED_AREA['x_min'] <= cx_cm <= IGNORED_AREA['x_max']
+                    and IGNORED_AREA['y_min'] <= cy_cm <= IGNORED_AREA['y_max']
                 ):
-                    ball_positions_cm.append((cx_cm, cy_cm, lbl)) 
+                    # Store (cm_x, cm_y, label, px_x, px_y)
+                    ball_positions_cm.append((cx_cm, cy_cm, lbl, cx, cy))
 
-        # --- 2) DETECT RED CROSS (WITH SIZE FILTER) ---
+        # --- 2) DETECT other objects (using model_v3) and mark them as obstacles ---
+        preds_v3 = model_v3.predict(
+            small,
+            confidence=int(CONFIDENCE_THRESHOLD * 100),
+            overlap=int(OVERLAP_THRESHOLD * 100)
+        ).json()
+
+        # We do not clear obstacles here; we merge new detections each frame,
+        # plus red‐cross obstacles below, plus any manual clicks.
+        for d in preds_v3.get('predictions', []):
+            lbl = d['class'].strip().lower()
+            if "ball" in lbl:
+                continue  # skip balls here—already handled
+
+            cx  = int(d['x'] * scale_x)
+            cy  = int(d['y'] * scale_y)
+            w   = int(d['width'] * scale_x)
+            h   = int(d['height'] * scale_y)
+
+            color = class_colors.setdefault(lbl, (random.randint(0,255), random.randint(0,255), random.randint(0,255)))
+            x1, y1 = cx - w//2, cy - h//2
+            x2, y2 = cx + w//2, cy + h//2
+            cv2.rectangle(original, (x1, y1), (x2, y2), color, 2)
+            cv2.putText(original, lbl, (x1, y1 - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+
+            # Sample inside bounding box every 10px → convert to cm → grid → add to obstacles
+            if homography_matrix is not None:
+                max_gx = REAL_WIDTH_CM // GRID_SPACING_CM
+                max_gy = REAL_HEIGHT_CM // GRID_SPACING_CM
+                for sx in range(x1, x2, 10):
+                    for sy in range(y1, y2, 10):
+                        real = pixel_to_cm(sx, sy)
+                        if real is None:
+                            continue
+                        gx, gy = cm_to_grid_coords(real[0], real[1])
+                        if 0 <= gx <= max_gx and 0 <= gy <= max_gy:
+                            obstacles.add((gx, gy))
+
+        # --- 3) DETECT RED CROSS (size‐filtered) and merge those cells into obstacles ---
         if homography_matrix is not None:
             hsv = cv2.cvtColor(original, cv2.COLOR_BGR2HSV)
             lower_red1 = np.array([0, 120, 70])
@@ -506,20 +628,20 @@ def process_frames():
             best_contour = None
             best_contour_area = 0
 
-            px_per_cm_x = w_full / real_width_cm
-            px_per_cm_y = h_full / real_height_cm
+            px_per_cm_x = w_full / REAL_WIDTH_CM
+            px_per_cm_y = h_full / REAL_HEIGHT_CM
 
             for cnt in contours:
                 area_px = cv2.contourArea(cnt)
-                if area_px < 500:
+                if area_px < MIN_RED_AREA_PX:
                     continue
 
-                x, y, w, h = cv2.boundingRect(cnt)
-                approx_cm_w = w / px_per_cm_x
-                approx_cm_h = h / px_per_cm_y
+                x_r, y_r, w_r, h_r = cv2.boundingRect(cnt)
+                approx_cm_w = w_r / px_per_cm_x
+                approx_cm_h = h_r / px_per_cm_y
                 approx_cm_area = approx_cm_w * approx_cm_h
 
-                if approx_cm_area > 400:
+                if approx_cm_area > MAX_RED_AREA_CM2:
                     continue
 
                 if area_px > best_contour_area:
@@ -530,22 +652,23 @@ def process_frames():
             if best_contour is not None:
                 cv2.drawContours(original, [best_contour], -1, (0, 255, 0), 2)
 
-                bx, by, bw, bh = cv2.boundingRect(best_contour)
-                for sx in range(bx, bx + bw, 10):
-                    for sy in range(by, by + bh, 10):
+                bx, by, bw_cnt, bh_cnt = cv2.boundingRect(best_contour)
+                max_gx = REAL_WIDTH_CM // GRID_SPACING_CM
+                max_gy = REAL_HEIGHT_CM // GRID_SPACING_CM
+
+                for sx in range(bx, bx + bw_cnt, 10):
+                    for sy in range(by, by + bh_cnt, 10):
                         if cv2.pointPolygonTest(best_contour, (sx, sy), False) >= 0:
                             real = pixel_to_cm(sx, sy)
                             if real is None:
                                 continue
                             gx, gy = cm_to_grid_coords(real[0], real[1])
-                            max_gx = real_width_cm // grid_spacing_cm
-                            max_gy = real_height_cm // grid_spacing_cm
                             if 0 <= gx <= max_gx and 0 <= gy <= max_gy:
                                 new_obstacles.add((gx, gy))
 
-            obstacles |= new_obstacles  # merge instead of overwrite
+            obstacles |= new_obstacles  # merge red‐cross obstacles
 
-        # --- 3) DRAW GRID + ROUTE (A*) ---
+        # --- 4) DRAW GRID + ROUTE (A*) + HIGHLIGHT BALLS ---
         frame_with_grid  = draw_metric_grid(original)
         frame_with_route = draw_full_route(frame_with_grid, ball_positions_cm)
 
@@ -580,12 +703,8 @@ def display_frames():
                     save_route_to_file(pending_route)
                 else:
                     print("⚠️ No route to save yet.")
-
                 if full_grid_path:
-                    robot_ip = "10.225.58.57"
-                    robot_port = 12345
-                    heading = "N"
-                    send_path(robot_ip, robot_port, full_grid_path, heading)
+                    send_path(ROBOT_IP, ROBOT_PORT, full_grid_path, ROBOT_HEADING)
                 else:
                     print("⚠️ No full_grid_path available to send.")
             continue
@@ -606,12 +725,8 @@ def display_frames():
                 save_route_to_file(pending_route)
             else:
                 print("⚠️ No route to save yet.")
-
             if full_grid_path:
-                robot_ip = "10.225.58.57"
-                robot_port = 12345
-                heading = "N"
-                send_path(robot_ip, robot_port, full_grid_path, heading)
+                send_path(ROBOT_IP, ROBOT_PORT, full_grid_path, ROBOT_HEADING)
             else:
                 print("⚠️ No full_grid_path available to send.")
 
@@ -620,6 +735,12 @@ def display_frames():
 # === Main Thread ===
 
 if __name__ == "__main__":
+    # Ensure outer edges are always walkable
+    ensure_outer_edges_walkable()
+
+    # Default selected goal
+    selected_goal = 'A'
+
     cap_thread = threading.Thread(target=capture_frames)
     proc_thread = threading.Thread(target=process_frames)
     disp_thread = threading.Thread(target=display_frames)

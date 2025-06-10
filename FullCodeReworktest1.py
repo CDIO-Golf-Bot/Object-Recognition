@@ -11,8 +11,8 @@ import itertools
 
 # === Roboflow Model Initialization ===
 rf = Roboflow(api_key="7kMjalIwU9TqGmKM0g4i")
-project = rf.workspace("pingpong-fafrv").project("newpingpongdetector")
-model = project.version(1).model
+project = rf.workspace("pingpong-fafrv").project("pingpongdetector-rqboj")
+model = project.version(3).model
 
 # === Video Capture Setup ===
 cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)
@@ -47,6 +47,9 @@ last_ball_positions_cm  = []
 last_selected_goal      = None
 pending_route           = None
 full_grid_path          = []  # Store the raw grid‐cell path for sending
+
+# === Simple Tracking Buffer (pixel coords) ===
+buffered_positions_px = []  # holds last up to 3 (cx, cy)
 
 # === Start & Goal Definitions ===
 start_point_cm = (20, 20)
@@ -435,7 +438,7 @@ def capture_frames():
     print("📷 capture_frames exiting")
 
 def process_frames():
-    global ball_positions_cm, obstacles
+    global ball_positions_cm, buffered_positions_px, obstacles
 
     while not stop_event.is_set():
         try:
@@ -444,15 +447,17 @@ def process_frames():
             continue
 
         original = frame.copy()
-        small    = cv2.resize(frame, (416, 416))
-        preds    = model.predict(small, confidence=30, overlap=20).json()
+
+        # --- 1) DEEP-LEARNING INFERENCE AT 416×416 (Baseline) ---
+        small = cv2.resize(frame, (416, 416))
+        preds = model.predict(small, confidence=30, overlap=20).json()
 
         h_full, w_full = original.shape[:2]
         scale_x = w_full / 416
         scale_y = h_full / 416
 
-        # --- 1) DETECT BALLS ---
-        ball_positions_cm.clear()
+        # Collect raw pixel centers
+        raw_detections = []
         for d in preds.get('predictions', []):
             cx  = int(d['x'] * scale_x)
             cy  = int(d['y'] * scale_y)
@@ -477,16 +482,36 @@ def process_frames():
             cv2.putText(original, lbl, (x1, y1 - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
-            cm_coords = pixel_to_cm(cx, cy)
+            raw_detections.append((cx, cy, lbl))
+
+        # --- 2) SIMPLE PIXEL-LEVEL TRACKING (AVERAGE OVER LAST 3) ---
+        if raw_detections:
+            # pick the first detection (or you could pick the one closest to last)
+            bx, by, blbl = raw_detections[0]
+            buffered_positions_px.append((bx, by))
+            if len(buffered_positions_px) > 3:
+                buffered_positions_px.pop(0)
+            avg_px = sum(p[0] for p in buffered_positions_px) / len(buffered_positions_px)
+            avg_py = sum(p[1] for p in buffered_positions_px) / len(buffered_positions_px)
+            cv2.circle(original, (int(avg_px), int(avg_py)), 5, (0,255,255), -1)
+            # Project averaged pixel->cm
+            cm_coords = pixel_to_cm(avg_px, avg_py)
             if cm_coords is not None:
                 cx_cm, cy_cm = cm_coords
                 if not (
                     ignored_area['x_min'] <= cx_cm <= ignored_area['x_max']
                     and ignored_area['y_min'] <= cy_cm <= ignored_area['y_max']
                 ):
-                    ball_positions_cm.append((cx_cm, cy_cm, lbl)) 
+                    ball_positions_cm = [(cx_cm, cy_cm, blbl)]
+                else:
+                    ball_positions_cm = []
+            else:
+                ball_positions_cm = []
+        else:
+            buffered_positions_px.clear()
+            ball_positions_cm = []
 
-        # --- 2) DETECT RED CROSS (WITH SIZE FILTER) ---
+        # --- 3) DETECT RED CROSS (WITH SIZE FILTER) FOR OBSTACLES ---
         if homography_matrix is not None:
             hsv = cv2.cvtColor(original, cv2.COLOR_BGR2HSV)
             lower_red1 = np.array([0, 120, 70])
@@ -514,9 +539,9 @@ def process_frames():
                 if area_px < 500:
                     continue
 
-                x, y, w, h = cv2.boundingRect(cnt)
-                approx_cm_w = w / px_per_cm_x
-                approx_cm_h = h / px_per_cm_y
+                x, y, bw, bh = cv2.boundingRect(cnt)
+                approx_cm_w = bw / px_per_cm_x
+                approx_cm_h = bh / px_per_cm_y
                 approx_cm_area = approx_cm_w * approx_cm_h
 
                 if approx_cm_area > 400:
@@ -545,7 +570,7 @@ def process_frames():
 
             obstacles |= new_obstacles  # merge instead of overwrite
 
-        # --- 3) DRAW GRID + ROUTE (A*) ---
+        # --- 4) DRAW GRID + ROUTE (A*) ---
         frame_with_grid  = draw_metric_grid(original)
         frame_with_route = draw_full_route(frame_with_grid, ball_positions_cm)
 
