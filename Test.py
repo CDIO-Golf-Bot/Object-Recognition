@@ -54,7 +54,7 @@ SKIP_FRAMES = 3
 
 ROBOT_IP      = "10.137.48.57"
 ROBOT_PORT    = 12345
-ROBOT_HEADING = "N"
+ROBOT_HEADING = "E"
 
 OBSTACLE_DRAW_RADIUS_PX = 6
 GRID_LINE_COLOR         = (100, 100, 100)
@@ -373,17 +373,34 @@ def ensure_outer_edges_walkable():
         obstacles.discard((max_x, gy))
     print("✅ Outer edges cleared.")
 
-def send_path(ip: str, port: int, grid_path: list, heading: str):
+robot_sock = None
+
+def init_robot_connection(ip: str, port: int, timeout=2.0):
+    global robot_sock
     try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.settimeout(2.0)
-            sock.connect((ip, port))
-            payload = {"heading": heading,
-                       "path": [[int(gx), int(gy)] for (gx, gy) in grid_path]}
-            data = json.dumps(payload).encode("utf-8")
-            prefix = len(data).to_bytes(4, 'big')
-            sock.sendall(prefix + data)
-            print(f"📨 Sent path to {ip}:{port} → {len(grid_path)} cells, heading={heading}")
+        robot_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        robot_sock.settimeout(timeout)
+        robot_sock.connect((ip, port))
+        robot_sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        print(f"📡 Connected to robot at {ip}:{port}")
+    except Exception as e:
+        print(f"❌ Could not connect to robot: {e}")
+        robot_sock = None
+
+def send_path(grid_path: list, heading: str):
+    global robot_sock
+    if robot_sock is None:
+        print("⚠️  No robot connection, aborting send.")
+        return
+    try:
+        payload = {
+            "heading": heading,
+            "path": [[int(gx), int(gy)] for (gx, gy) in grid_path]
+        }
+        data = json.dumps(payload).encode("utf-8")
+        prefix = len(data).to_bytes(4, "big")
+        robot_sock.sendall(prefix + data)
+        print(f"📨 Sent path → {len(grid_path)} cells, heading={heading}")
     except Exception as e:
         print(f"❌ Failed to send path: {e}")
 
@@ -549,6 +566,8 @@ def process_frames():
 
     print("🖥️ process_frames exiting")
 
+
+
 def display_frames():
     global selected_goal, full_grid_path
     cv2.namedWindow("Live Object Detection")
@@ -570,7 +589,7 @@ def display_frames():
                 if pending_route:
                     save_route_to_file(pending_route)
                 if full_grid_path:
-                    send_path(ROBOT_IP, ROBOT_PORT, full_grid_path, ROBOT_HEADING)
+                    send_path(full_grid_path, ROBOT_HEADING)
             continue
 
         cv2.imshow("Live Object Detection", frame)
@@ -595,6 +614,9 @@ if __name__ == "__main__":
     ensure_outer_edges_walkable()
     selected_goal = 'A'
 
+    # open persistent robot connection once
+    init_robot_connection(ROBOT_IP, ROBOT_PORT)
+
     cap_thread = threading.Thread(target=capture_frames)
     proc_thread = threading.Thread(target=process_frames)
     disp_thread = threading.Thread(target=display_frames)
@@ -607,6 +629,9 @@ if __name__ == "__main__":
     cap_thread.join()
     proc_thread.join()
 
+    # clean up robot socket
+    if robot_sock:
+        robot_sock.close()
     cap.release()
     cv2.destroyAllWindows()
     print("✂️ Exiting cleanly")
