@@ -13,6 +13,40 @@ TURN_SPEED          = 35                     # deg/s for in-place turns
 DRIVE_SPEED         = 50                     # deg/s for driving straight
 TURN_CALIBRATION    = 1.1                    # multiply to tune actual vs. commanded turn
 AUX_MOTOR_SPEED     = 50                     # deg/s for D motor whenever moving
+CELL_SIZE_CM = 2.0
+
+def follow_path(points, start_heading_deg):
+    """
+    points: list of (x,y) tuples
+    start_heading_deg: robot's initial heading in degrees (0=east, 90=north)
+    """
+    cur_heading = start_heading_deg
+    (cur_x, cur_y) = points[0]
+
+    for (next_x, next_y) in points[1:]:
+        dx = next_x - cur_x
+        dy = next_y - cur_y
+
+        # atan2 returns radians with 0=+x axis
+        target_heading = math.degrees(math.atan2(dy, dx))
+        # normalize into [0,360)
+        if target_heading < 0:
+            target_heading += 360
+
+        # compute minimal turn difference in [-180,180]
+        delta = (target_heading - cur_heading + 180) % 360 - 180
+
+        # do the turn and drive
+        if abs(delta) > 1e-6:
+            perform_turn(delta)
+
+        distance_cm = math.hypot(dx, dy) * CELL_SIZE_CM
+        if distance_cm > 1e-6:
+            drive_distance(distance_cm)
+
+        # update for next segment
+        cur_heading = target_heading
+        cur_x, cur_y = next_x, next_y
 
 # === INITIALIZE ===
 tank = MoveTank(OUTPUT_B, OUTPUT_C)
@@ -91,8 +125,13 @@ def run_server(host='', port=12345):
                         try:
                             cmd = json.loads(line.decode())
                             print("Command received:", cmd)
-                            handle_command(cmd, buffer)
-                            buffer['last_cmd_time'] = time.time()
+                            if 'path' in cmd and 'heading' in cmd:
+                                heading_map = {'E': 0, 'N': 90, 'W': 180, 'S': 270}
+                                start_deg = heading_map.get(cmd['heading'], 0)
+                                follow_path(cmd['path'], start_deg)
+                            else:
+                                handle_command(cmd, buffer)
+                                buffer['last_cmd_time'] = time.time()
                         except json.JSONDecodeError:
                             print("Invalid JSON:", line)
                     # auto-flush forward if idle > threshold
