@@ -8,7 +8,7 @@ from ev3dev2.sensor.lego import GyroSensor
 from ev3dev2.sensor import INPUT_3
 
 # === CONFIGURATION ===
-WHEEL_DIAM_CM       = 3.7                    # your wheel diameter in cm
+WHEEL_DIAM_CM       = 4.15                    # your wheel diameter in cm
 WHEEL_CIRC_CM       = WHEEL_DIAM_CM * math.pi
 CELL_SIZE_CM        = 2.0                    # grid spacing (2cm)
 
@@ -39,33 +39,28 @@ def calibrate_gyro():
 def _start_aux(): aux_motor.on(50)
 def _stop_aux(): aux_motor.off()
 
-# PID-corrected straight drive by distance
+# PID-corrected straight drive using on_for_rotations
 def drive_distance(distance_cm, speed_pct=30, target_angle=None):
-    # Debug log: how many cells and cm
-    cells = distance_cm / CELL_SIZE_CM
-    # Use ASCII 'deg' instead of degree symbol
-    print("Driving forward {:.0f} cells ({:.2f} cm) at heading {} deg".format(cells, distance_cm, gyro.angle))
+    print("Driving {:.2f} cm at heading {} deg".format(distance_cm, gyro.angle))
 
     if target_angle is None:
         target_angle = gyro.angle
 
-    degrees = (distance_cm / WHEEL_CIRC_CM) * 360.0
-    tank.left_motor.position = 0
-    tank.right_motor.position = 0
+    rotations = distance_cm / WHEEL_CIRC_CM
 
     integral = 0.0
     last_error = 0.0
 
     _start_aux()
     try:
+        tank.left_motor.position = 0
+        tank.right_motor.position = 0
+
         while True:
-            left_pos  = abs(tank.left_motor.position)
-            right_pos = abs(tank.right_motor.position)
-            avg_pos = (left_pos + right_pos) / 2.0
-            if avg_pos >= degrees:
+            avg_rot = (abs(tank.left_motor.position) + abs(tank.right_motor.position)) / 2.0 / 360.0
+            if avg_rot >= rotations:
                 break
 
-            # Gyro correction
             error = target_angle - gyro.angle
             if abs(error) < 1:
                 error = 0
@@ -87,9 +82,7 @@ def drive_distance(distance_cm, speed_pct=30, target_angle=None):
 
 # Gyro-based turn
 def perform_turn(angle_deg):
-    # Debug log: turning direction
     direction = 'right' if angle_deg > 0 else 'left'
-    # Use ASCII 'deg'
     print("Turning {} {:.2f} deg".format(direction, abs(angle_deg)))
 
     start_angle = gyro.angle
@@ -97,7 +90,6 @@ def perform_turn(angle_deg):
 
     _start_aux()
     try:
-        # proportional turn until within tolerance
         while abs(gyro.angle - target_angle) > angle_tolerance:
             error = target_angle - gyro.angle
             power = min(max(abs(error) * 0.3, 10), turn_speed_pct)
@@ -110,7 +102,6 @@ def perform_turn(angle_deg):
         tank.off()
         time.sleep(0.1)
 
-        # final fine adjustment
         final_error = target_angle - gyro.angle
         if abs(final_error) > angle_tolerance:
             adj_power = 5
@@ -124,7 +115,6 @@ def perform_turn(angle_deg):
         _stop_aux()
 
 # Path following
-
 def follow_path(points, start_heading_deg):
     cur_heading = start_heading_deg
     cur_x, cur_y = points[0]
@@ -133,17 +123,14 @@ def follow_path(points, start_heading_deg):
         dx = (next_x - cur_x) * CELL_SIZE_CM
         dy = (next_y - cur_y) * CELL_SIZE_CM
 
-        # desired heading
         target_heading = math.degrees(math.atan2(dy, dx))
         if target_heading < 0:
             target_heading += 360.0
 
-        # minimal turn
         delta = (target_heading - cur_heading + 180) % 360 - 180
         if abs(delta) > angle_tolerance:
             perform_turn(delta)
 
-        # drive straight
         distance = math.hypot(dx, dy)
         if distance > 0.0:
             drive_distance(distance, speed_pct=30, target_angle=gyro.angle)
@@ -152,7 +139,6 @@ def follow_path(points, start_heading_deg):
         cur_x, cur_y = next_x, next_y
 
 # Command handling
-
 def handle_command(cmd, buffer):
     if 'turn' in cmd:
         if buffer['distance_buffer'] > 0:
@@ -164,7 +150,6 @@ def handle_command(cmd, buffer):
         buffer['distance_buffer'] += float(cmd['distance'])
 
 # Server loop
-
 def run_server(host='', port=12345):
     calibrate_gyro()
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as srv:
@@ -199,7 +184,6 @@ def run_server(host='', port=12345):
                         except json.JSONDecodeError:
                             print("Invalid JSON: {}".format(line))
 
-                    # auto-flush
                     if (buffer['distance_buffer'] > 0 and
                         time.time() - buffer['last_cmd_time'] > 0.2):
                         drive_distance(buffer['distance_buffer'], speed_pct=30, target_angle=gyro.angle)
