@@ -115,16 +115,19 @@ def get_aruco_robot_position_and_heading(frame):
     corners, ids, _ = detector.detectMarkers(frame)
 
     if ids is not None:
+        # 🔽 Draw markers directly on the frame here
+        cv2.aruco.drawDetectedMarkers(frame, corners, ids)
+
         for i, marker_id in enumerate(ids.flatten()):
             if marker_id != 100:
                 continue
 
             pts = corners[i][0]  # 4x2 array
-            pt1, pt2 = pts[0], pts[1]  # top-left to top-right
+            pt1, pt2 = pts[0], pts[1]
 
             dx = pt2[0] - pt1[0]
             dy = pt2[1] - pt1[1]
-            angle_rad = np.arctan2(-dy, dx)  # Negate dy to match screen orientation
+            angle_rad = np.arctan2(-dy, dx)
             heading_deg = (np.degrees(angle_rad) + 360) % 360
 
             cx = np.mean(pts[:, 0])
