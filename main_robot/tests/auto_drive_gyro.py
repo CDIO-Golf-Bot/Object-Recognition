@@ -36,8 +36,13 @@ def calibrate_gyro():
     time.sleep(0.1)
 
 # Aux control
-def _start_aux(): aux_motor.on(50)
+def _start_aux(): aux_motor.on(35)
 def _stop_aux(): aux_motor.off()
+
+def _reverse_aux(duration=1.5):
+    aux_motor.on(-35)
+    time.sleep(duration)
+    aux_motor.off()
 
 # PID-corrected straight drive using on_for_rotations
 def drive_distance(distance_cm, speed_pct=30, target_angle=None):
@@ -149,7 +154,11 @@ def handle_command(cmd, buffer):
     if 'distance' in cmd:
         buffer['distance_buffer'] += float(cmd['distance'])
 
-# Server loop
+    if 'deliver' in cmd and cmd['deliver'] == True:
+        print("Executing delivery sequence.")
+        _reverse_aux()
+
+
 def run_server(host='', port=12345):
     calibrate_gyro()
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as srv:
@@ -158,36 +167,47 @@ def run_server(host='', port=12345):
         srv.listen(1)
         print("Listening on {}:{}...".format(host or '0.0.0.0', port))
         while True:
-            conn, addr = srv.accept()
-            print("Client connected from {}".format(addr))
-            buf = b''
-            buffer = {'distance_buffer': 0.0, 'last_cmd_time': time.time()}
-            with conn:
-                while True:
-                    data = conn.recv(1024)
-                    if not data:
-                        if buffer['distance_buffer'] > 0:
-                            drive_distance(buffer['distance_buffer'], speed_pct=30, target_angle=gyro.angle)
-                        break
-                    buf += data
-                    while b'\n' in buf:
-                        line, buf = buf.split(b'\n', 1)
+            try:
+                conn, addr = srv.accept()
+                print("Client connected from {}".format(addr))
+                buf = b''
+                buffer = {'distance_buffer': 0.0, 'last_cmd_time': time.time()}
+                with conn:
+                    while True:
                         try:
-                            cmd = json.loads(line.decode())
-                            if 'path' in cmd and 'heading' in cmd:
-                                heading_map = {'E':0,'N':90,'W':180,'S':270}
-                                start_deg = heading_map.get(cmd['heading'], 0)
-                                follow_path(cmd['path'], start_deg)
-                            else:
-                                handle_command(cmd, buffer)
-                                buffer['last_cmd_time'] = time.time()
-                        except json.JSONDecodeError:
-                            print("Invalid JSON: {}".format(line))
+                            data = conn.recv(1024)
+                            if not data:
+                                if buffer['distance_buffer'] > 0:
+                                    drive_distance(buffer['distance_buffer'], speed_pct=30, target_angle=gyro.angle)
+                                break
+                            buf += data
+                            while b'\n' in buf:
+                                line, buf = buf.split(b'\n', 1)
+                                try:
+                                    cmd = json.loads(line.decode())
+                                    if 'path' in cmd and 'heading' in cmd:
+                                        heading_map = {'E': 0, 'N': 90, 'W': 180, 'S': 270}
+                                        start_deg = heading_map.get(cmd['heading'], 0)
+                                        follow_path(cmd['path'], start_deg)
+                                    else:
+                                        handle_command(cmd, buffer)
+                                        buffer['last_cmd_time'] = time.time()
+                                except json.JSONDecodeError:
+                                    print("Invalid JSON: {}".format(line))
 
-                    if (buffer['distance_buffer'] > 0 and
-                        time.time() - buffer['last_cmd_time'] > 0.2):
-                        drive_distance(buffer['distance_buffer'], speed_pct=30, target_angle=gyro.angle)
-                        buffer['distance_buffer'] = 0.0
+                            if (buffer['distance_buffer'] > 0 and
+                                    time.time() - buffer['last_cmd_time'] > 0.2):
+                                drive_distance(buffer['distance_buffer'], speed_pct=30, target_angle=gyro.angle)
+                                buffer['distance_buffer'] = 0.0
+                        except ConnectionResetError:
+                            print("Client disconnected unexpectedly. Cleaned up.")
+                            break
+                        except Exception as e:
+                            print("Unexpected server error: {}".format(e))
+                            break
+            except Exception as e:
+                print("Error accepting connection: {}".format(e))
+
 
 if __name__ == '__main__':
     run_server()
