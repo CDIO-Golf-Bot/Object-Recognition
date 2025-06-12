@@ -26,6 +26,10 @@ REAL_WIDTH_CM    = 180
 REAL_HEIGHT_CM   = 120
 GRID_SPACING_CM  = 2
 
+# Buffer the outermost 4 cm so robot never goes within 4 cm of any wall
+EDGE_BUFFER_CM    = 4
+EDGE_BUFFER_CELLS = int(np.ceil(EDGE_BUFFER_CM / GRID_SPACING_CM))
+
 START_POINT_CM = (20, 20)         # fallback if robot not seen
 GOAL_A_CM      = (REAL_WIDTH_CM, REAL_HEIGHT_CM // 2)
 GOAL_B_CM      = None
@@ -217,10 +221,10 @@ def compute_best_route(balls_list, goal_name):
     best_cost = float('inf')
     for perm in itertools.permutations(range(1, len(ball_cells)+1)):
         cost = 0
-        segs = []
         # start->first
         c,p = dm[(0, perm[0])]
-        cost+=c; segs.append(p)
+        cost+=c; segs=[]
+        segs.append(p)
         # between balls
         for a,b in zip(perm, perm[1:]):
             c,p = dm[(a,b)]
@@ -233,10 +237,9 @@ def compute_best_route(balls_list, goal_name):
             best_cost, best = cost, perm
 
     # reconstruct few
-    route_cm = [start_cm] + [(balls_list[i-1][0], balls_list[i-1][1]) for i in best] + [goal_cm]
-    full_cells = []
-    # rebuild path cells
-    seq = [0] + list(best) + ['G']
+    route_cm = [start_cm] + [(balls_list[i-1][0],balls_list[i-1][1]) for i in best] + [goal_cm]
+    full_cells=[]
+    seq=[0] + list(best) + ['G']
     for i in range(len(seq)-1):
         a, b = seq[i], seq[i+1]
         if b == 'G':
@@ -372,6 +375,20 @@ def ensure_outer_edges_walkable():
         obstacles.discard((0, gy))
         obstacles.discard((max_x, gy))
     print("✅ Outer edges cleared.")
+
+def add_edge_buffer_obstacles(buffer_cells):
+    """
+    Mark every cell within `buffer_cells` of the border as an obstacle,
+    preventing the robot from entering that strip.
+    """
+    max_gx = REAL_WIDTH_CM // GRID_SPACING_CM
+    max_gy = REAL_HEIGHT_CM // GRID_SPACING_CM
+    for gx in range(max_gx + 1):
+        for gy in range(max_gy + 1):
+            if (gx < buffer_cells or gx > max_gx - buffer_cells or
+                gy < buffer_cells or gy > max_gy - buffer_cells):
+                obstacles.add((gx, gy))
+    print(f"🛑 Added edge buffer: {buffer_cells} cells (≈{EDGE_BUFFER_CM} cm)")
 
 robot_sock = None
 
@@ -515,7 +532,7 @@ def process_frames():
                             obstacles.add((gx, gy))
 
         # 3) RED CROSS (unchanged)
-        if homography_matrix is not None:
+        if homography_matrix:
             hsv = cv2.cvtColor(original, cv2.COLOR_BGR2HSV)
             mask1 = cv2.inRange(hsv, np.array([0,120,70]), np.array([10,255,255]))
             mask2 = cv2.inRange(hsv, np.array([170,120,70]),np.array([180,255,255]))
@@ -566,8 +583,6 @@ def process_frames():
 
     print("🖥️ process_frames exiting")
 
-
-
 def display_frames():
     global selected_goal, full_grid_path
     cv2.namedWindow("Live Object Detection")
@@ -605,13 +620,14 @@ def display_frames():
             if pending_route:
                 save_route_to_file(pending_route)
             if full_grid_path:
-                send_path(ROBOT_IP, ROBOT_PORT, full_grid_path, ROBOT_HEADING)
+                send_path(full_grid_path, ROBOT_HEADING)
 
     print("🖼️ display_frames exiting")
 
 # === Main Thread ===
 if __name__ == "__main__":
     ensure_outer_edges_walkable()
+    add_edge_buffer_obstacles(EDGE_BUFFER_CELLS)  # ← apply 4 cm buffer
     selected_goal = 'A'
 
     # open persistent robot connection once
