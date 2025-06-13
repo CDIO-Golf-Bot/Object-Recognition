@@ -1,3 +1,13 @@
+"""
+grid_utils.py
+
+Provide real-world ↔ grid coordinate services and obstacle drawing:
+  • Convert pixel ⇄ cm (pixel_to_cm / cm_to_grid_coords).
+  • Maintain an obstacle set in grid coordinates.
+  • Overlay the cached metric grid and draw obstacles onto each frame.
+  • Utility to clear border cells (ensure_outer_edges_walkable).
+"""
+
 import cv2
 import numpy as np
 import config

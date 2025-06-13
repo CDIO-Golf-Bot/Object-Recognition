@@ -1,3 +1,9 @@
+# utils.py
+#
+# Helper functions (e.g. check if the list of detected balls changed
+# enough to warrant recomputing the route).
+
+
 def significant_change(balls, last, tol_cm=1.0):
     """
     Returns True if the new ball list differs significantly from the last.

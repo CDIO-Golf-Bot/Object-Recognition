@@ -1,3 +1,8 @@
+# robot_comm.py
+#
+# Open/close socket to the robot and send it a compressed path payload.
+
+
 import socket
 import json
 

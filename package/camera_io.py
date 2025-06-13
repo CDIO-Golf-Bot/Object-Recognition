@@ -1,3 +1,9 @@
+# camera_io.py
+#
+# Grab frames from the camera (tries multiple Windows backends)
+# and show them on screen, handling mouse clicks and keypresses.
+
+
 import cv2
 import traceback
 

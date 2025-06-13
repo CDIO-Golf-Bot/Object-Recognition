@@ -1,3 +1,15 @@
+"""
+planner.py
+
+Implement path planning and route visualization on the grid:
+  • A* search, Manhattan heuristic, and path compression.
+  • Select top N balls and brute-force TSP-style best route to a goal.
+  • Compute and cache full route in cm & grid cells.
+  • Draw the complete path with real-world scaling on camera frames.
+  • Save a planned route to disk.
+"""
+
+
 import cv2
 import numpy as np
 import itertools

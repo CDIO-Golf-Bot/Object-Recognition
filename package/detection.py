@@ -1,3 +1,9 @@
+# detection.py
+#
+# Run YOLO on each frame, detect balls/robot/obstacles,
+# convert to world coordinates, and pass along to navigation.
+
+
 import random
 import cv2
 import numpy as np

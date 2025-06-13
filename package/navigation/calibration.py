@@ -1,3 +1,13 @@
+"""
+calibration.py
+
+Handle all camera ↔ world calibration tasks:
+  • Gather four user-clicked corner points to compute homography.
+  • Detect ArUco marker #100 to estimate robot position & heading in cm.
+  • Build and cache a semi-transparent metric grid overlay.
+"""
+
+
 import cv2
 import numpy as np
 import config

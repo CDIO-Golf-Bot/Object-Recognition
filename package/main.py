@@ -1,3 +1,9 @@
+# main.py
+#
+# Kick off threads for camera capture, object detection, and display;
+# manage robot connection and clean shutdown.
+
+
 import threading
 import cv2
 from queue import Queue

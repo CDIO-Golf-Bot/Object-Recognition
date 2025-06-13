@@ -1,3 +1,9 @@
+# config.py
+#
+# All the adjustable settings: camera, grid sizes, thresholds,
+# network addresses, drawing colors, and other constants.
+
+
 import numpy as np
 import random
 
@@ -8,7 +14,7 @@ PROJECT_NAME     = "newpingpongdetector"
 VERSION          = 1
 
 # === Camera Settings ===
-CAMERA_INDEX   = 0
+CAMERA_INDEX   = 1
 FRAME_WIDTH    = 1280
 FRAME_HEIGHT   = 720
 FRAMES_PER_SEC = 30
