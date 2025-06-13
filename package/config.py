@@ -1,0 +1,61 @@
+import numpy as np
+import random
+
+# === Roboflow / Model Config ===
+ROBOFLOW_API_KEY = "7kMjalIwU9TqGmKM0g4i"
+WORKSPACE_NAME   = "pingpong-fafrv"
+PROJECT_NAME     = "newpingpongdetector"
+VERSION          = 1
+
+# === Camera Settings ===
+CAMERA_INDEX   = 1
+FRAME_WIDTH    = 1280
+FRAME_HEIGHT   = 720
+FRAMES_PER_SEC = 30
+BUFFER_SIZE    = 1
+SKIP_FRAMES = 3
+
+# === Real-World Grid Dimensions ===
+REAL_WIDTH_CM   = 180
+REAL_HEIGHT_CM  = 120
+GRID_SPACING_CM = 2
+
+START_POINT_CM = (20, 20)
+GOAL_A_CM      = (REAL_WIDTH_CM - 35, REAL_HEIGHT_CM // 2)
+GOAL_B_CM      = None
+
+GOAL_RANGE = {
+    'A': [GOAL_A_CM],
+    'B': GOAL_B_CM
+}
+
+# === Obstacle Expansion ===
+OBSTACLE_BUFFER_CM = 10
+BUFFER_CELLS = int(np.ceil(OBSTACLE_BUFFER_CM / GRID_SPACING_CM))
+
+# === Detection Thresholds ===
+MAX_BALLS_TO_COLLECT = 3
+CONFIDENCE_THRESHOLD = 0.50
+OVERLAP_THRESHOLD    = 0.05
+MIN_RED_AREA_PX      = 500
+MAX_RED_AREA_CM2     = 400
+
+IGNORED_AREA = {
+    'x_min': 50, 'x_max': 100,
+    'y_min': 50, 'y_max': 100
+}
+
+# === Robot Config ===
+ROBOT_IP      = "10.137.48.57"
+ROBOT_PORT    = 12345
+ROBOT_HEADING = 0.0
+
+# === Drawing Options ===
+OBSTACLE_DRAW_RADIUS_PX = 6
+GRID_LINE_COLOR         = (100, 100, 100)
+PATH_COLOR              = (0, 255, 255)
+TEXT_COLOR              = (0, 255, 255)
+
+# === Misc ===
+RANDOM_SEED = 42
+random.seed(RANDOM_SEED)
