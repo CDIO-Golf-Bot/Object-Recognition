@@ -5,10 +5,10 @@ import math
 import time
 from ev3dev2.motor import MoveTank, Motor, OUTPUT_B, OUTPUT_C, OUTPUT_D, SpeedPercent
 from ev3dev2.sensor.lego import GyroSensor
-from ev3dev2.sensor import INPUT_3
+from ev3dev2.sensor import INPUT_4
 
 # === CONFIGURATION ===
-WHEEL_DIAM_CM = 4.15
+WHEEL_DIAM_CM = 4.13
 WHEEL_CIRC_CM = WHEEL_DIAM_CM * math.pi
 CELL_SIZE_CM  = 2.0
 
@@ -20,10 +20,12 @@ max_correction = 12
 turn_speed_pct = 30
 angle_tolerance = 1.0
 
+LEFT_BIAS = 5.0
+
 # === INITIALIZE ===
 tank = MoveTank(OUTPUT_B, OUTPUT_C)
 aux_motor = Motor(OUTPUT_D)
-gyro = GyroSensor(INPUT_3)
+gyro = GyroSensor(INPUT_4)
 
 # Global offset to align gyro with client's heading
 gyro_offset = 0.0
@@ -37,21 +39,29 @@ def calibrate_gyro():
     time.sleep(1)
     gyro.mode = 'GYRO-ANG'
     time.sleep(0.1)
+    gyro.reset()
+    time.sleep(0.1)
+
 
 def _start_aux(): aux_motor.on(35)
 def _stop_aux(): aux_motor.off()
+
 def _reverse_aux(duration=1.5):
     aux_motor.on(-35)
     time.sleep(duration)
     aux_motor.off()
 
 def drive_distance(distance_cm, speed_pct=30, target_angle=None):
+    """
+    Drive straight for a given distance in cm using gyro-based correction (PID).
+    Uses motor rotation feedback to determine when to stop.
+    """
     if target_angle is None:
         target_angle = get_heading()
     target_angle = target_angle % 360.0  # Normalize
 
-    print("Driving {:.2f} cm at target {:.1f} deg (raw gyro: {:.1f})".format(
-        distance_cm, target_angle, gyro.angle))
+    print("Driving {:.2f} cm at target {:.1f} (current heading: {:.1f})".format(
+        distance_cm, target_angle, get_heading()))
 
     rotations = distance_cm / WHEEL_CIRC_CM
     integral = 0.0
@@ -59,32 +69,55 @@ def drive_distance(distance_cm, speed_pct=30, target_angle=None):
 
     _start_aux()
     try:
-        tank.left_motor.reset()
-        tank.right_motor.reset()
+        start_left = tank.left_motor.position
+        start_right = tank.right_motor.position
 
         while True:
-            avg_rot = (abs(tank.left_motor.position) + abs(tank.right_motor.position)) / 2.0 / 360.0
+            current_left = tank.left_motor.position
+            current_right = tank.right_motor.position
+            avg_rot = (abs(current_left - start_left) + abs(current_right - start_right)) / 2.0 / 360.0
             if avg_rot >= rotations:
                 break
 
-            error = (target_angle - get_heading() + 540) % 360 - 180  # shortest direction
-            if abs(error) < 1:
-                error = 0
+            # Gyro correction logic
+            error = (target_angle - get_heading() + 540) % 360 - 180
+            if abs(error) < 1.0:
+                error = 0.0
+
             integral += error
             derivative = error - last_error
             last_error = error
 
-            corr = gyro_kp * error + gyro_ki * integral + gyro_kd * derivative
-            corr = max(min(corr, max_correction), -max_correction)
+            # Clamp integral to avoid windup
+            integral = max(min(integral, 100), -100)
 
-            left_spd  = max(min(speed_pct - corr, 100), -100)
-            right_spd = max(min(speed_pct + corr, 100), -100)
+            correction = gyro_kp * error + gyro_ki * integral + gyro_kd * derivative
+            correction = max(min(correction, max_correction), -max_correction)
 
-            tank.on(SpeedPercent(left_spd), SpeedPercent(right_spd))
+            left_speed = max(min(speed_pct - correction + LEFT_BIAS, 100), -100)
+            right_speed = max(min(speed_pct + correction, 100), -100)
+
+            tank.on(SpeedPercent(left_speed), SpeedPercent(right_speed))
             time.sleep(0.01)
     finally:
         tank.off()
         _stop_aux()
+
+        # Debug: Actual traveled distance and drift
+        actual_left_rot = (tank.left_motor.position - start_left) / 360.0
+        actual_right_rot = (tank.right_motor.position - start_right) / 360.0
+        actual_avg_rot = (abs(actual_left_rot) + abs(actual_right_rot)) / 2.0
+        actual_distance = actual_avg_rot * WHEEL_CIRC_CM
+        drift = (actual_right_rot - actual_left_rot) * WHEEL_CIRC_CM
+
+        print("Actual distance: {:.2f} cm (L: {:.2f}, R: {:.2f})".format(
+            actual_distance,
+            actual_left_rot * WHEEL_CIRC_CM,
+            actual_right_rot * WHEEL_CIRC_CM
+        ))
+        print("Drift (Right - Left): {:.2f} cm\n".format(drift))
+
+
 
 def perform_turn(angle_deg):
     direction = 'right' if angle_deg > 0 else 'left'
@@ -97,7 +130,10 @@ def perform_turn(angle_deg):
     try:
         while abs((get_heading() - target_angle + 540) % 360 - 180) > angle_tolerance:
             error = (target_angle - get_heading() + 540) % 360 - 180
-            power = min(max(abs(error) * 0.3, 10), turn_speed_pct)
+            k_p = 0.4
+            min_power = 5
+            power = max(min(abs(error) * k_p, turn_speed_pct), min_power)
+
             if error > 0:
                 tank.on(-power, power)
             else:
@@ -121,7 +157,7 @@ def perform_turn(angle_deg):
 
 def follow_path(points, start_heading_deg):
     global gyro_offset
-    gyro_offset = start_heading_deg - gyro.angle
+    gyro_offset = start_heading_deg  # The gyro starts at 0 after calibration
     print("\nGyro offset applied: {:.1f} degrees (gyro: {:.1f}, client: {:.1f})\n".format(
         gyro_offset, gyro.angle, start_heading_deg))
 

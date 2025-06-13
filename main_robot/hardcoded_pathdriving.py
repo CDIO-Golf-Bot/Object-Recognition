@@ -1,18 +1,25 @@
 #!/usr/bin/env python3
 from ev3dev2.motor import MoveTank, Motor, OUTPUT_B, OUTPUT_C, OUTPUT_D, SpeedPercent
-from ev3dev2.sensor.lego import GyroSensor
-from ev3dev2.sensor import INPUT_3
+from ev3dev2.sensor.lego import GyroSensor, UltrasonicSensor
+from ev3dev2.sensor import INPUT_4, INPUT_1
 import time
 import math
 
 # --- Constants ---
-WHEEL_DIAMETER_CM = 4.0  # Adjust this to your robot's wheel diameter
+WHEEL_DIAMETER_CM = 4.13  # Adjust this to your robot's wheel diameter
 WHEEL_CIRCUMFERENCE_CM = WHEEL_DIAMETER_CM * math.pi
 
 # --- Initialization ---
 tank = MoveTank(OUTPUT_B, OUTPUT_C)
 motor_d = Motor(OUTPUT_D)
-gyro = GyroSensor(INPUT_3)
+gyro = GyroSensor(INPUT_4)
+try:
+    distance_sensor = UltrasonicSensor(INPUT_1)
+    ultrasonic_available = True
+except Exception as e:
+    print("Warning: Ultrasonic sensor not available:", e)
+    ultrasonic_available = False
+
 
 # --- Gyro calibration ---
 print("Calibrating gyro, keep robot still...")
@@ -28,52 +35,36 @@ ki = 0.0002
 kd = 5.5
 max_correction = 8
 
-def drive_distance(distance_cm, speed_pct=30, target_angle=None):
+def drive_distance(distance_cm, speed_pct=30):
     """
-    Drive straight for specified distance in cm, maintaining heading with gyro + PID.
-    If target_angle is None, uses current gyro angle as target.
+    Drive straight for specified distance in cm using on_for_rotations.
     """
-    if target_angle is None:
-        target_angle = gyro.angle
-    
-    # Calculate required motor degrees to travel distance_cm
-    degrees = (distance_cm / WHEEL_CIRCUMFERENCE_CM) * 360
-    
-    # Reset motor positions
-    tank.left_motor.position = 0
-    tank.right_motor.position = 0
-    
-    integral = 0
-    last_error = 0
-    
-    while True:
-        # Get current motor positions
-        left_pos = abs(tank.left_motor.position)
-        right_pos = abs(tank.right_motor.position)
-        avg_pos = (left_pos + right_pos) / 2
-        
-        # Check if we've traveled far enough
-        if avg_pos >= degrees:
-            break
-            
-        # Gyro correction
-        error = target_angle - gyro.angle
-        if abs(error) < 1:
-            error = 0
-        integral += error
-        derivative = error - last_error
-        last_error = error
+    rotations = distance_cm / WHEEL_CIRCUMFERENCE_CM
+    print("\n--- Drive Debug Start ---")
+    print("Target distance: {:.2f} cm ({} rotations)".format(distance_cm, rotations))
 
-        corr = kp * error + ki * integral + kd * derivative
-        corr = max(min(corr, max_correction), -max_correction)
+    if ultrasonic_available:
+        start_distance = distance_sensor.distance_centimeters
+        print("Initial ultrasonic distance: {:.2f} cm".format(start_distance))
+    else:
+        start_distance = None
+        print("Ultrasonic sensor data unavailable.")
 
-        left_spd = max(min(speed_pct - corr, 100), -100)
-        right_spd = max(min(speed_pct + corr, 100), -100)
+    # Perform the movement
+    tank.on_for_rotations(SpeedPercent(speed_pct), SpeedPercent(speed_pct), rotations)
 
-        tank.on(SpeedPercent(left_spd), SpeedPercent(right_spd))
-        time.sleep(0.01)
-    
-    tank.off()
+    # Debug output
+    print("--- Drive Debug End ---")
+    if ultrasonic_available and start_distance is not None:
+        end_distance = distance_sensor.distance_centimeters
+        distance_change = start_distance - end_distance
+        print("  Final ultrasonic: {:.2f} cm".format(end_distance))
+        print("  Ultrasonic delta: {:.2f} cm\n".format(distance_change))
+    else:
+        print("  Ultrasonic sensor data unavailable.\n")
+
+
+
 
 # --- Improved gyro-based turn ---
 def turn(angle_deg, turn_speed=30):
@@ -84,22 +75,22 @@ def turn(angle_deg, turn_speed=30):
     start_angle = gyro.angle
     target_angle = start_angle + angle_deg
     angle_tolerance = 1.0  # degrees
-    
+
     # Simple proportional control
     while abs(gyro.angle - target_angle) > angle_tolerance:
         error = target_angle - gyro.angle
         power = min(max(abs(error) * 0.3, 10), turn_speed)  # Proportional control
-        
+
         if error > 0:
             tank.on(-power, power)  # Right turn
         else:
             tank.on(power, -power)  # Left turn
-        
+
         time.sleep(0.01)
-    
+
     tank.off()
     time.sleep(0.1)  # Brief pause to settle
-    
+
     # Final correction if needed
     final_error = target_angle - gyro.angle
     if abs(final_error) > angle_tolerance:
@@ -114,32 +105,16 @@ def turn(angle_deg, turn_speed=30):
 if __name__ == '__main__':
     try:
         motor_d.on(40)
-        
-        # 1) Forward 20 cm
-        print("Forward 20 cm")
-        drive_distance(20, speed_pct=30)
-        
-        # 2) Turn right 90°
-        print("Turn right 90 degrees")
-        turn(90, turn_speed=30)
-        
-        # 3) Forward 30 cm
-        print("Forward 30 cm")
-        drive_distance(30, speed_pct=30, target_angle=gyro.angle)
-        
-        # 4) Turn left 90°
-        print("Turn left 90 degrees")
-        turn(-90, turn_speed=30)
-        
-        # 5) Forward 20 cm
-        print("Forward 20 cm")
-        drive_distance(20, speed_pct=30, target_angle=gyro.angle)
-        
+
+        # 1) Forward 100 cm
+        print("Forward 100 cm")
+        drive_distance(100, speed_pct=30)
+
         # 6) Reverse motor D
         motor_d.on_for_seconds(-15, 8)
-        
+
         print("Done")
-    
+
     except Exception as e:
         print("Error:", e)
         tank.off()
