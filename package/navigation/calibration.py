@@ -21,7 +21,7 @@ grid_overlay = None
 
 def get_aruco_robot_position_and_heading(frame):
     """
-    Detect the ArUco marker ID 100, draw it on frame,
+    Detect the ArUco marker #100, draw it on the frame,
     and return (x_cm, y_cm, heading_deg) in real-world coords, or None.
     """
     aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_5X5_1000)
@@ -35,14 +35,11 @@ def get_aruco_robot_position_and_heading(frame):
             if marker_id != 100:
                 continue
             pts = corners[idx][0]  # 4x2 array
-            # compute heading
             dx = pts[1][0] - pts[0][0]
             dy = pts[1][1] - pts[0][1]
             angle_rad = np.arctan2(-dy, dx)
             heading_deg = (np.degrees(angle_rad) + 360) % 360
-            # compute centroid
             cx, cy = pts[:,0].mean(), pts[:,1].mean()
-            # map to real-world
             if inv_homography_matrix is not None:
                 pt = np.array([[[cx, cy]]], dtype="float32")
                 real_pt = cv2.perspectiveTransform(pt, inv_homography_matrix)[0][0]
@@ -52,9 +49,9 @@ def get_aruco_robot_position_and_heading(frame):
 
 def click_to_set_corners(event, x, y, flags, param):
     """
-    Mouse callback: collect four corner clicks to compute homography.
-    Left-click to add corner; right-click to remove.
-    After four points, compute homography and prepare grid overlay.
+    Mouse callback: left-click to add a corner (up to 4);
+    right-click to remove the most recent corner.
+    After 4 points, compute homography and cache a grid overlay.
     """
     global calibration_points, homography_matrix, inv_homography_matrix, grid_overlay
 
@@ -63,7 +60,6 @@ def click_to_set_corners(event, x, y, flags, param):
             calibration_points.append([x, y])
             print(f"Corner {len(calibration_points)} set: ({x}, {y})")
         if len(calibration_points) == 4 and homography_matrix is None:
-            # destination rectangle in cm units
             dst = np.array([
                 [0, 0],
                 [config.REAL_WIDTH_CM, 0],
@@ -76,27 +72,34 @@ def click_to_set_corners(event, x, y, flags, param):
             print("✅ Homography calculated.")
             create_and_cache_grid_overlay()
 
-    elif event == cv2.EVENT_RBUTTONDOWN and homography_matrix is not None:
-        # allow resetting a point
+    elif event == cv2.EVENT_RBUTTONDOWN:
+        # Always allow removing the last corner
         if calibration_points:
             removed = calibration_points.pop()
             print(f"❌ Removed corner: {removed}")
+        # Reset homography if we have fewer than 4 points
+        if len(calibration_points) < 4:
+            homography_matrix = None
+            inv_homography_matrix = None
+            grid_overlay = None
 
 
 def create_and_cache_grid_overlay():
     """
-    Generate a blank grid in real-world cm and warp into pixel space.
+    Build a transparent metric grid overlay (cm → pixel) and cache it.
+    If no homography has been computed yet, do nothing.
     """
     global grid_overlay
-    # canvas in cm resolution
+    if homography_matrix is None:
+        return
+
+    # create a blank cm‐resolution canvas
     canvas = np.zeros((config.REAL_HEIGHT_CM+1, config.REAL_WIDTH_CM+1, 3), dtype=np.uint8)
-    # draw grid lines
     for x in range(0, config.REAL_WIDTH_CM+1, config.GRID_SPACING_CM):
         cv2.line(canvas, (x, 0), (x, config.REAL_HEIGHT_CM), config.GRID_LINE_COLOR, 1)
     for y in range(0, config.REAL_HEIGHT_CM+1, config.GRID_SPACING_CM):
         cv2.line(canvas, (0, y), (config.REAL_WIDTH_CM, y), config.GRID_LINE_COLOR, 1)
-    # warp to camera image size
-    w_px = config.FRAME_WIDTH
-    h_px = config.FRAME_HEIGHT
+
+    w_px, h_px = config.FRAME_WIDTH, config.FRAME_HEIGHT
     grid_overlay = cv2.warpPerspective(canvas, homography_matrix, (w_px, h_px), flags=cv2.INTER_LINEAR)
     print("🗺️ Cached grid overlay.")
