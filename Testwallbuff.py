@@ -35,11 +35,11 @@ GOAL_RANGE = {
 }
 
 # obstacle‐expansion buffer (in cm → grid cells)
-OBSTACLE_BUFFER_CM  = 10
+OBSTACLE_BUFFER_CM  = 8
 BUFFER_CELLS        = int(np.ceil(OBSTACLE_BUFFER_CM / GRID_SPACING_CM))
 
 # border‐buffer around the entire field (in cm → grid cells)
-BORDER_BUFFER_CM    = 10
+BORDER_BUFFER_CM    = 8
 BORDER_BUFFER_CELLS = int(np.ceil(BORDER_BUFFER_CM / GRID_SPACING_CM))
 
 MAX_BALLS_TO_COLLECT = 4
