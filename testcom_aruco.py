@@ -10,12 +10,13 @@ from queue import Queue, Empty
 from roboflow import Roboflow
 import cv2
 import numpy as np
+import math
 # === CONFIGURABLE CONSTANTS ===
 
 ROBOFLOW_API_KEY    = "7kMjalIwU9TqGmKM0g4i"
 WORKSPACE_NAME      = "pingpong-fafrv"
 PROJECT_NAME        = "newpingpongdetector"
-VERSION             = 1
+VERSION             = 3
 
 CAMERA_INDEX        = 1
 FRAME_WIDTH         = 1280
@@ -28,7 +29,7 @@ REAL_HEIGHT_CM      = 120
 GRID_SPACING_CM     = 2
 
 START_POINT_CM      = (20, 20)
-GOAL_A_CM           = (REAL_WIDTH_CM, REAL_HEIGHT_CM // 2)
+GOAL_A_CM           = (REAL_WIDTH_CM - 35, REAL_HEIGHT_CM // 2)
 GOAL_B_CM           = None
 
 GOAL_RANGE = {
@@ -36,7 +37,7 @@ GOAL_RANGE = {
     'B': GOAL_B_CM
 }
 
-OBSTACLE_BUFFER_CM  = 10
+OBSTACLE_BUFFER_CM  = 8
 BUFFER_CELLS        = int(np.ceil(OBSTACLE_BUFFER_CM / GRID_SPACING_CM))
 
 MAX_BALLS_TO_COLLECT = 3
@@ -455,6 +456,11 @@ def send_path(grid_path: list, heading: float):
         data = json.dumps(payload).encode("utf-8") + b'\n'
         robot_sock.sendall(data)
         print(f"\U0001f4e8 Sent path → {len(filtered)} points (compressed from {len(grid_path)}), heading={heading:.1f}")
+
+        deliver_cmd = json.dumps({"deliver": True}).encode("utf-8") + b'\n'
+        robot_sock.sendall(deliver_cmd)
+        print("\U0001f4e8 Sent delivery command")
+        
     except Exception as e:
         print(f"\u274c Failed to send path: {e}")
 
@@ -477,7 +483,7 @@ def capture_frames():
     print("📷 capture_frames exiting")
 
 def process_frames():
-    global ball_positions_cm, obstacles, robot_position_cm
+    global ball_positions_cm, obstacles, robot_position_cm, ROBOT_HEADING
     while not stop_event.is_set():
         try:
             frame = frame_queue.get(timeout=0.02)
@@ -485,10 +491,51 @@ def process_frames():
             continue
 
         original = frame.copy()
-        aruco_result = get_aruco_robot_position_and_heading(original)
-        if aruco_result:
-            robot_position_cm = (aruco_result[0], aruco_result[1])
-            ROBOT_HEADING = round(aruco_result[2], 1)  # Update global heading
+
+        # ───────────── ArUco detection with heading arrow ─────────────
+        aruco_dict  = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_5X5_1000)
+        params      = cv2.aruco.DetectorParameters()
+        detector    = cv2.aruco.ArucoDetector(aruco_dict, params)
+        corners, ids, _ = detector.detectMarkers(frame)
+
+        if ids is not None:
+            cv2.aruco.drawDetectedMarkers(original, corners, ids)
+            for idx, marker_id in enumerate(ids.flatten()):
+                if marker_id != 100:
+                    continue
+
+                # your 4×2 pts
+                marker_pts = corners[idx][0]
+
+                # compute heading
+                dx = marker_pts[1][0] - marker_pts[0][0]
+                dy = marker_pts[1][1] - marker_pts[0][1]
+                heading_deg = (np.degrees(np.arctan2(-dy, dx)) + 360) % 360
+
+                # screen centroid
+                cx_px = int((marker_pts[0][0] + marker_pts[2][0]) * 0.5)
+                cy_px = int((marker_pts[0][1] + marker_pts[2][1]) * 0.5)
+
+                # world coords & globals
+                real = pixel_to_cm(cx_px, cy_px)
+                if real:
+                    robot_position_cm = real
+                    ROBOT_HEADING     = heading_deg
+
+                # draw arrow + text
+                theta = math.radians(heading_deg)
+                end_x = int(cx_px + 50 * math.cos(theta))
+                end_y = int(cy_px - 50 * math.sin(theta))
+                cv2.arrowedLine(original,
+                                (cx_px, cy_px),
+                                (end_x, end_y),
+                                (0, 255, 0), 2, tipLength=0.3)
+                cv2.putText(original,
+                            f"{heading_deg:.1f}°",
+                            (cx_px + 10, cy_px - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6,
+                            (0, 255, 0), 2)
+
         small    = cv2.resize(frame, (416, 416))
         h_full, w_full = original.shape[:2]
         scale_x = w_full / 416
