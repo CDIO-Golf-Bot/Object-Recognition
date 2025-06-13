@@ -9,11 +9,11 @@ def run_server(host='', port=12345):
         srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         srv.bind((host, port))
         srv.listen(1)
-        print(f"Listening on {host or '0.0.0.0'}:{port}…")
+        print("Listening on {}:{}…".format(host or '0.0.0.0', port))
 
         while True:
             conn, addr = srv.accept()
-            print("Client connected:", addr)
+            print("Client connected: {}".format(addr))
             buf =     b''
             state =   {'distance_buffer':0.0}
 
@@ -35,4 +35,4 @@ def run_server(host='', port=12345):
                             else:
                                 motion.handle_command(cmd, state)
                         except json.JSONDecodeError:
-                            print("Bad JSON:", line)
+                            print("Bad JSON: {}".format(line))
