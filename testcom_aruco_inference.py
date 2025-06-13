@@ -67,7 +67,7 @@ RANDOM_SEED = 42
 random.seed(RANDOM_SEED)
 
 # === Initialize Yolo
-yolo_model = YOLO("weights.pt")
+yolo_model = YOLO("weights_v3.pt")
 
 # === Video Capture Setup ===
 cap = cv2.VideoCapture(CAMERA_INDEX, cv2.CAP_DSHOW)
