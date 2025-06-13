@@ -88,7 +88,9 @@ def perform_turn(angle_deg):
     direction = 'right' if angle_deg > 0 else 'left'
     print("Turning {} {:.2f} deg".format(direction, abs(angle_deg)))
 
-    target_angle = get_heading() + angle_deg
+    start_angle = get_heading()
+    target_angle = start_angle + angle_deg
+
     _start_aux()
     try:
         while abs(get_heading() - target_angle) > angle_tolerance:
@@ -115,6 +117,7 @@ def perform_turn(angle_deg):
         tank.off()
         _stop_aux()
 
+
 def follow_path(points, start_heading_deg):
     global gyro_offset
     gyro_offset = start_heading_deg - gyro.angle
@@ -123,6 +126,10 @@ def follow_path(points, start_heading_deg):
 
     cur_heading = get_heading()  # <-- use adjusted gyro heading
     cur_x, cur_y = points[0]
+
+    print("Path received from client:")
+    for i, (x, y) in enumerate(points):
+        print("  {:2d}: Grid ({}, {})".format(i, x, y))
 
     for next_x, next_y in points[1:]:
         dx = (next_x - cur_x) * CELL_SIZE_CM
