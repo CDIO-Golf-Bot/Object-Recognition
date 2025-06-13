@@ -12,10 +12,10 @@ WHEEL_DIAM_CM = 4.15
 WHEEL_CIRC_CM = WHEEL_DIAM_CM * math.pi
 CELL_SIZE_CM  = 2.0
 
-gyro_kp = 2.5
-gyro_ki = 0.0002
-gyro_kd = 5.5
-max_correction = 8
+gyro_kp = 3.0
+gyro_ki = 0.0003
+gyro_kd = 6.0
+max_correction = 12
 
 turn_speed_pct = 30
 angle_tolerance = 1.0
@@ -28,15 +28,15 @@ gyro = GyroSensor(INPUT_3)
 # Global offset to align gyro with client's heading
 gyro_offset = 0.0
 
+def get_heading():
+    return (gyro.angle + gyro_offset) % 360.0
+
 def calibrate_gyro():
     print("Calibrating gyro, keep robot still...")
     gyro.mode = 'GYRO-CAL'
     time.sleep(1)
     gyro.mode = 'GYRO-ANG'
     time.sleep(0.1)
-
-def get_heading():
-    return gyro.angle + gyro_offset
 
 def _start_aux(): aux_motor.on(35)
 def _stop_aux(): aux_motor.off()
@@ -48,6 +48,8 @@ def _reverse_aux(duration=1.5):
 def drive_distance(distance_cm, speed_pct=30, target_angle=None):
     if target_angle is None:
         target_angle = get_heading()
+    target_angle = target_angle % 360.0  # Normalize
+
     print("Driving {:.2f} cm at target {:.1f} deg (raw gyro: {:.1f})".format(
         distance_cm, target_angle, gyro.angle))
 
@@ -57,15 +59,15 @@ def drive_distance(distance_cm, speed_pct=30, target_angle=None):
 
     _start_aux()
     try:
-        tank.left_motor.position = 0
-        tank.right_motor.position = 0
+        tank.left_motor.reset()
+        tank.right_motor.reset()
 
         while True:
             avg_rot = (abs(tank.left_motor.position) + abs(tank.right_motor.position)) / 2.0 / 360.0
             if avg_rot >= rotations:
                 break
 
-            error = target_angle - get_heading()
+            error = (target_angle - get_heading() + 540) % 360 - 180  # shortest direction
             if abs(error) < 1:
                 error = 0
             integral += error
@@ -89,12 +91,12 @@ def perform_turn(angle_deg):
     print("Turning {} {:.2f} deg".format(direction, abs(angle_deg)))
 
     start_angle = get_heading()
-    target_angle = start_angle + angle_deg
+    target_angle = (start_angle + angle_deg) % 360.0
 
     _start_aux()
     try:
-        while abs(get_heading() - target_angle) > angle_tolerance:
-            error = target_angle - get_heading()
+        while abs((get_heading() - target_angle + 540) % 360 - 180) > angle_tolerance:
+            error = (target_angle - get_heading() + 540) % 360 - 180
             power = min(max(abs(error) * 0.3, 10), turn_speed_pct)
             if error > 0:
                 tank.on(-power, power)
@@ -105,7 +107,7 @@ def perform_turn(angle_deg):
         tank.off()
         time.sleep(0.1)
 
-        final_error = target_angle - get_heading()
+        final_error = (target_angle - get_heading() + 540) % 360 - 180
         if abs(final_error) > angle_tolerance:
             adj_power = 5
             if final_error > 0:
@@ -117,19 +119,18 @@ def perform_turn(angle_deg):
         tank.off()
         _stop_aux()
 
-
 def follow_path(points, start_heading_deg):
     global gyro_offset
     gyro_offset = start_heading_deg - gyro.angle
     print("\nGyro offset applied: {:.1f} degrees (gyro: {:.1f}, client: {:.1f})\n".format(
         gyro_offset, gyro.angle, start_heading_deg))
 
-    cur_heading = get_heading()  # <-- use adjusted gyro heading
-    cur_x, cur_y = points[0]
-
     print("Path received from client:")
     for i, (x, y) in enumerate(points):
         print("  {:2d}: Grid ({}, {})".format(i, x, y))
+
+    cur_heading = get_heading()
+    cur_x, cur_y = points[0]
 
     for next_x, next_y in points[1:]:
         dx = (next_x - cur_x) * CELL_SIZE_CM
