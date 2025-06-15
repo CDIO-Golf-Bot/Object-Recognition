@@ -4,12 +4,24 @@ import json
 from ev3dev2.motor import SpeedPercent
 import config as config, hardware
 
+robot_pose = {
+    "x": None,
+    "y": None,
+    "theta": None,
+    "timestamp": time.time()
+}
+
 def _start_aux():    hardware.aux_motor.on(config.AUX_FORWARD_PCT)
 def _stop_aux():     hardware.aux_motor.off()
 def _reverse_aux():  
     hardware.aux_motor.on(config.AUX_REVERSE_PCT)
     time.sleep(config.AUX_REVERSE_SEC)
     hardware.aux_motor.off()
+
+def get_corrected_heading():
+    if robot_pose["theta"] is not None and time.time() - robot_pose["timestamp"] < 0.5:
+        return robot_pose["theta"]
+    return hardware.get_heading()
 
 def drive_distance(distance_cm, speed_pct=None, target_angle=None):
     """Drive straight for a given distance using heading PID (I-term disabled)."""
@@ -60,7 +72,8 @@ def drive_distance(distance_cm, speed_pct=None, target_angle=None):
 
 def perform_turn(angle_deg):
     """Rotate in place by angle_deg (±), using gyro feedback."""
-    target = (hardware.get_heading() + angle_deg) % 360.0
+    current_heading = get_corrected_heading()
+    target = (current_heading + angle_deg) % 360.0
     _start_aux()
     try:
         while abs(((hardware.get_heading() - target + 540) % 360) - 180) > config.ANGLE_TOLERANCE:
@@ -83,25 +96,40 @@ def follow_path(points, start_heading_deg):
     hardware.gyro_offset = start_heading_deg
     hardware.calibrate_gyro()
     print("Gyro offset={:.1f} (gyro={})".format(hardware.gyro_offset, hardware.gyro.angle))
-    cur_heading = hardware.get_heading()
+
+    cur_heading = get_corrected_heading()
     cur_x, cur_y = points[0]
 
     for nx, ny in points[1:]:
         dx = (nx - cur_x) * config.CELL_SIZE_CM
         dy = (ny - cur_y) * config.CELL_SIZE_CM
-        target_heading = math.degrees(math.atan2(dy, dx)) % 360.0
-        delta = ((target_heading - cur_heading + 180) % 360) - 180
 
+        # Desired direction to next point
+        target_heading = math.degrees(math.atan2(dy, dx)) % 360.0
+
+        # Correct current heading based on live drift
+        live_heading = get_corrected_heading()
+        drift_error = ((live_heading - cur_heading + 540) % 360) - 180
+        if abs(drift_error) > 5.0:
+            print("Drift detected ({} deg), correcting...".format(round(drift_error, 1)))
+            perform_turn(drift_error)
+            cur_heading = get_corrected_heading()
+
+        # Now compute actual angle difference to next point
+        delta = ((target_heading - cur_heading + 180) % 360) - 180
         if abs(delta) > config.ANGLE_TOLERANCE:
             perform_turn(delta)
+            cur_heading = get_corrected_heading()
 
+        # Drive to the point
         distance = math.hypot(dx, dy)
         if distance > 0:
-            # pass the exact segment heading as target_angle
             drive_distance(distance, speed_pct=config.DRIVE_SPEED_PCT, target_angle=target_heading)
 
+        # Update current state
         cur_heading = target_heading
         cur_x, cur_y = nx, ny
+
 
 def pure_pursuit_follow(path, lookahead_cm=15, speed_pct=None):
     """Continuously follow a path using the Pure Pursuit algorithm."""
