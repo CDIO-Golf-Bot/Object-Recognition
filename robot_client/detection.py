@@ -10,8 +10,8 @@ import numpy as np
 from ultralytics import YOLO
 from queue import Empty
 
-import config
-import navigation
+from robot_client import config
+from robot_client import navigation
 
 # === Global State ===
 yolo_model = YOLO("weights_v3.pt")  # Adjust path if needed

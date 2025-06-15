@@ -4,15 +4,14 @@
 # manage robot connection and clean shutdown.
 
 
+# IMPORTANT: SETUP PROJECT FIRST BY RUNNING: pip install -e .
+
+
 import threading
 import cv2
 from queue import Queue
 
-import config
-import camera_io
-import detection
-import robot_comm
-import navigation
+from robot_client import config, camera_io, detection, robot_comm, navigation
 
 # === Shared Globals ===
 frame_queue  = Queue(maxsize=1)

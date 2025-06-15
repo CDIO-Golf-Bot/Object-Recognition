@@ -10,8 +10,8 @@ Provide real-world ↔ grid coordinate services and obstacle drawing:
 
 import cv2
 import numpy as np
-import config
-import navigation.calibration as calibration
+from robot_client import config
+from . import calibration
 
 # === Grid & Obstacle State ===
 obstacles = set()

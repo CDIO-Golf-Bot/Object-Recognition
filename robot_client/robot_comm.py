@@ -6,10 +6,11 @@
 import socket
 import json
 
-from config import ROBOT_HEADING
-from navigation import compress_path
+from robot_client.config import ROBOT_HEADING
+from robot_client.navigation.planner import compress_path
 
 robot_sock = None
+
 
 def init_robot_connection(ip: str, port: int, timeout=2.0):
     global robot_sock

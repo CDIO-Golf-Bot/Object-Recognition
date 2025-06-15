@@ -15,10 +15,10 @@ import numpy as np
 import itertools
 import heapq
 
-import config
-import utils
-import navigation.grid_utils as gu
-import navigation.calibration as cal
+from robot_client import config
+from .. import utils
+from . import grid_utils as gu
+from . import calibration as cal
 
 # === Routing State ===
 cached_route = None

@@ -3,14 +3,14 @@ import numpy as np
 import itertools
 import heapq
 
-from config import (
+from robot_client.config import (
     REAL_WIDTH_CM, REAL_HEIGHT_CM,
     GRID_SPACING_CM, START_POINT_CM,
     GOAL_RANGE, BUFFER_CELLS,
     OBSTACLE_DRAW_RADIUS_PX, GRID_LINE_COLOR,
     PATH_COLOR, TEXT_COLOR, MAX_BALLS_TO_COLLECT
 )
-from utils import significant_change
+from .. import utils 
 
 
 # === Global Shared State ===
@@ -251,7 +251,7 @@ def draw_full_route(frame, ball_positions):
 
     route_changed = (
         cached_route is None or
-        significant_change(chosen, last_ball_positions_cm) or
+        utils.significant_change(chosen, last_ball_positions_cm) or
         last_selected_goal != selected_goal
     )
 

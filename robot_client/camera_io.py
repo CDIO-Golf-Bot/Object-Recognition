@@ -7,9 +7,9 @@
 import cv2
 import traceback
 
-import config
-import robot_comm
-import navigation
+from robot_client import config
+from robot_client import robot_comm
+from robot_client import navigation
 
 def capture_frames(frame_queue, stop_event):
     """Capture camera frames, trying multiple Windows backends."""

@@ -10,7 +10,7 @@ Handle all camera ↔ world calibration tasks:
 
 import cv2
 import numpy as np
-import config
+from robot_client import config
 
 # === Calibration State ===
 homography_matrix = None

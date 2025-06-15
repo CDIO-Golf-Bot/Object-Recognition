@@ -3,14 +3,8 @@ import numpy as np
 import sys
 import os
 
-# Add project root to sys.path so imports work
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "package"))
-sys.path.append(project_root)
-
-import config
-import navigation.calibration as calibration
-import navigation.grid_utils as gu
-import navigation.planner as planner
+from robot_client import config
+from robot_client.navigation import calibration, grid_utils as gu, planner
 
 # === Settings ===
 SIM_WIDTH_PX = 900
