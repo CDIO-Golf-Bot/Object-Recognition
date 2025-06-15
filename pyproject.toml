@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.8"
 
 [tool.setuptools]
-packages = ["robot_client"]
+packages = ["robot_client", "ev3_robot"]
 
 [build-system]
 requires = ["setuptools"]
