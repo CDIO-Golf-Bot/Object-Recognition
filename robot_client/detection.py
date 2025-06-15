@@ -12,6 +12,7 @@ from queue import Empty
 
 from robot_client import config
 from robot_client import navigation
+from robot_client import robot_comm
 
 # === Global State ===
 yolo_model = YOLO("weights_v3.pt")  # Adjust path if needed
@@ -37,6 +38,8 @@ def process_frames(frame_queue, output_queue, stop_event):
             x_cm, y_cm, heading_deg = aruco
             navigation.robot_position_cm = (x_cm, y_cm)
             navigation.ROBOT_HEADING    = heading_deg
+            
+            robot_comm.send_pose(x_cm, y_cm, heading_deg)
 
         # — YOLO inference —
         results    = yolo_model(original, verbose=False)

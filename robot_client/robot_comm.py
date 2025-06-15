@@ -30,6 +30,27 @@ def close_robot_connection():
         robot_sock.close()
         print("🔌 Robot connection closed.")
 
+
+def send_pose(x_cm, y_cm, theta_deg):
+    global robot_sock
+    if robot_sock is None:
+        print("⚠️ No robot connection, cannot send pose.")
+        return
+    try:
+        pose_msg = {
+            "pose": {
+                "x": round(x_cm, 2),
+                "y": round(y_cm, 2),
+                "theta": round(theta_deg, 1)
+            }
+        }
+        data = json.dumps(pose_msg).encode("utf-8") + b'\n'
+        robot_sock.sendall(data)
+        print("📡 Sent pose: x={:.2f}, y={:.2f}, θ={:.1f}".format(x_cm, y_cm, theta_deg))
+    except Exception as e:
+        print("❌ Failed to send pose: {}".format(e))
+
+
 def send_path(grid_path: list, heading: float = ROBOT_HEADING):
     global robot_sock
     if robot_sock is None:
