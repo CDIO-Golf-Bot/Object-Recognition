@@ -3,6 +3,7 @@ import cv2
 import traceback
 import math
 import time
+import stopevent
 
 from robot_client import config, robot_comm, navigation, detection
 from robot_client.navigation.planner import compute_best_route
@@ -121,24 +122,48 @@ def display_frames(output_queue, stop_event):
     cv2.destroyAllWindows()
     print("display_frames exiting")
 
-def _execute_route(route_cm):
+def _execute_route(route_cm, stop_event):
     """
     For each (x,y) in route_cm:
       1) send_goto(x,y)
       2) wait until detection.planner.robot_position_cm is within ARRIVAL_THRESHOLD_CM
+      3) abort or skip if stop_event is set or timeout expires
     Then send_deliver().
     """
     for x_target, y_target in route_cm:
+        # Check for global abort
+        if stop_event.is_set():
+            print("Route aborted by user")
+            return
+
+        # Send the drive command
         robot_comm.send_goto(x_target, y_target)
+        start_t = time.time()
+
+        # Poll until arrival, abort, or timeout
         while True:
-            # get latest camera‐derived position
+            # Abort on stop_event
+            if stop_event.is_set():
+                print("Route aborted during segment")
+                return
+
+            # Timeout handling
+            elapsed = time.time() - start_t
+            if elapsed > config.MAX_SEGMENT_TIME:
+                print(f"⚠️ Timeout ({elapsed:.1f}s) to reach ({x_target:.1f},{y_target:.1f}); skipping")
+                break
+
+            # Check current pose
             pos = detection.planner.robot_position_cm
             if pos is not None:
                 cur_x, cur_y = pos
                 dist = math.hypot(x_target - cur_x, y_target - cur_y)
                 if dist < config.ARRIVAL_THRESHOLD_CM:
-                    print(f"Arrived at ({x_target:.1f}, {y_target:.1f}) → d={dist:.1f}cm")
+                    print(f"Arrived at ({x_target:.1f}, {y_target:.1f}) → d={dist:.1f}cm in {elapsed:.1f}s")
                     break
+
             time.sleep(0.05)  # adjust polling rate
+
+    # Final deliver
     robot_comm.send_deliver()
     print("🏁 Route complete, delivered")

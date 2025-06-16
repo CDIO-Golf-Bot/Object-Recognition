@@ -35,7 +35,9 @@ ARUCO_REFERENCE_POINT  = "center"
 START_OFFSET_CM = 0.0
 
 # path
-ARRIVAL_THRESHOLD_CM = 2.0   # cm distance to goal to consider arrived
+ARRIVAL_THRESHOLD_CM = 4.0   # cm distance to goal to consider arrived
+MAX_SEGMENT_TIME = 15.0          # Max seconds to wait for a segment to complete (skip if too long)
+
 
 START_POINT_CM = (20, 20)
 GOAL_A_CM      = (REAL_WIDTH_CM - 18, (REAL_HEIGHT_CM // 2) -2)
