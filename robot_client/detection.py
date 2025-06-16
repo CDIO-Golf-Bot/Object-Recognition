@@ -18,7 +18,7 @@ from robot_client.navigation import planner
 from robot_client import config as client_config
 
 # === Global State ===
-yolo_model = YOLO("weights_v3.pt")  # Adjust path if needed
+yolo_model = YOLO("weights_v4.pt")  # Adjust path if needed
 
 ball_positions_cm = []
 obstacles = set()
