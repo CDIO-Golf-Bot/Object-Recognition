@@ -1,6 +1,8 @@
+import threading
 import cv2
 import traceback
 import math
+import time
 
 from robot_client import config, robot_comm, navigation, detection
 from robot_client.navigation.planner import compute_best_route
@@ -102,8 +104,11 @@ def display_frames(output_queue, stop_event):
 
                     # 2️⃣ Save it (optional) and send the compressed path
                     navigation.save_route_to_file(navigation.pending_route)
-                    robot_comm.send_path(navigation.full_grid_path,
-                                        config.ROBOT_HEADING)
+
+                    # new: stream one‐by‐one goto commands in a background thread
+                    threading.Thread(target=_execute_route, args=(navigation.pending_route,), daemon=True).start()
+                    
+                    # robot_comm.send_path(navigation.full_grid_path, config.ROBOT_HEADING)      # Old setup, sending the full path
                 else:
                     print("Route computation returned no waypoints.")
 
@@ -115,3 +120,25 @@ def display_frames(output_queue, stop_event):
     # Cleanup
     cv2.destroyAllWindows()
     print("display_frames exiting")
+
+def _execute_route(route_cm):
+    """
+    For each (x,y) in route_cm:
+      1) send_goto(x,y)
+      2) wait until detection.planner.robot_position_cm is within ARRIVAL_THRESHOLD_CM
+    Then send_deliver().
+    """
+    for x_target, y_target in route_cm:
+        robot_comm.send_goto(x_target, y_target)
+        while True:
+            # get latest camera‐derived position
+            pos = detection.planner.robot_position_cm
+            if pos is not None:
+                cur_x, cur_y = pos
+                dist = math.hypot(x_target - cur_x, y_target - cur_y)
+                if dist < config.ARRIVAL_THRESHOLD_CM:
+                    print(f"Arrived at ({x_target:.1f}, {y_target:.1f}) → d={dist:.1f}cm")
+                    break
+            time.sleep(0.05)  # adjust polling rate
+    robot_comm.send_deliver()
+    print("🏁 Route complete, delivered")

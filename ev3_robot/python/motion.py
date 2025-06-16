@@ -278,3 +278,102 @@ def handle_command(cmd, buf):
     if cmd.get('deliver'):
         print("DELIVER")
         _reverse_aux()
+
+    if 'goto' in cmd:
+        # flush any buffered encoder distance first
+        if buf.get('distance_buffer', 0) > 0:
+            drive_distance(buf['distance_buffer'])
+            buf['distance_buffer'] = 0
+        x, y = cmd['goto']
+        drive_to_point(x, y)
+        
+    if 'face' in cmd:
+        if buf.get('distance_buffer', 0) > 0:
+            drive_distance(buf['distance_buffer'])
+            buf['distance_buffer'] = 0
+        rotate_to_heading(float(cmd['face']))
+
+
+
+
+
+
+
+
+# NEW TO POINT DRIVE
+
+def drive_to_point(target_x_cm, target_y_cm,
+                   speed_pct=None, dist_thresh_cm=2.0):
+    """Continuously drive toward (x,y) until vision reports we’re within dist_thresh_cm."""
+    if speed_pct is None:
+        speed_pct = config.DRIVE_SPEED_PCT
+
+    _start_aux()
+    try:
+        while True:
+            # get freshest pose: vision if <0.5s old, else odometry/gyro
+            if (motion.robot_pose["x"] is not None
+                and time.time() - motion.robot_pose["timestamp"] < 0.5):
+                cur_x = motion.robot_pose["x"]
+                cur_y = motion.robot_pose["y"]
+            else:
+                # fallback: you could track with odometry, but here just break
+                print("No fresh vision – stopping")
+                break
+
+            dx = target_x_cm - cur_x
+            dy = target_y_cm - cur_y
+            distance = math.hypot(dx, dy)
+            if distance <= dist_thresh_cm:
+                print(f"Arrived within {dist_thresh_cm}cm of target")
+                break
+
+            # compute desired heading toward target
+            desired = math.degrees(math.atan2(dy, dx)) % 360.0
+            # heading error via gyro fusion
+            current = hardware.get_heading()
+            error = ((desired - current + 540) % 360) - 180
+            # PID from your config (only P + D here)
+            derivative = error  # since last_error resets each loop
+            corr = max(min(config.GYRO_KP*error + config.GYRO_KD*derivative,
+                           config.MAX_CORRECTION),
+                       -config.MAX_CORRECTION)
+
+            l_spd = max(min(speed_pct - corr + config.LEFT_BIAS, 100), -100)
+            r_spd = max(min(speed_pct + corr, 100), -100)
+            hardware.tank.on(SpeedPercent(l_spd), SpeedPercent(r_spd))
+            time.sleep(0.01)
+
+    finally:
+        hardware.tank.off()
+        _stop_aux()
+
+
+def rotate_to_heading(target_theta_deg, angle_thresh=1.0):
+    """Spin in place until vision+gyro say θ is within angle_thresh."""
+    _start_aux()
+    try:
+        while True:
+            # fused current heading
+            if (motion.robot_pose["theta"] is not None
+                and time.time() - motion.robot_pose["timestamp"] < 0.5):
+                current = motion.robot_pose["theta"]
+            else:
+                current = hardware.get_heading()
+
+            error = ((target_theta_deg - current + 540) % 360) - 180
+            if abs(error) <= angle_thresh:
+                print(f"Heading within {angle_thresh}°")
+                break
+
+            # simple P controller on turn speed
+            power = max(min(abs(error)*0.5, config.TURN_SPEED_PCT), 5)
+            if error > 0:
+                hardware.tank.on(-power, power)
+            else:
+                hardware.tank.on(power, -power)
+            time.sleep(0.01)
+
+    finally:
+        hardware.tank.off()
+        _stop_aux()

@@ -105,3 +105,31 @@ def send_deliver():
         print("📡 Sent deliver command")
     except Exception as e:
         print(f"❌ Failed to send deliver: {e}")
+
+
+
+
+
+# NEW DIRECT DRIVING COMMANDS
+
+def send_cmd(cmd: dict):
+    """Serialize a single JSON command and send it over the socket."""
+    global robot_sock
+    if not robot_sock:
+        print("⚠️ No robot connection, cannot send command.")
+        return
+    data = (json.dumps(cmd) + "\n").encode("utf-8")
+    try:
+        robot_sock.sendall(data)
+    except Exception as e:
+        print(f"❌ Failed to send {cmd!r}: {e}")
+        
+def send_goto(x_cm: float, y_cm: float):
+    """Tell the robot to drive continuously until vision/gyro says we've reached (x,y)."""
+    send_cmd({"goto": [float(x_cm), float(y_cm)]})
+    print(f"📡 Sent goto → x={x_cm:.1f}cm, y={y_cm:.1f}cm")
+
+def send_face(theta_deg: float):
+    """Tell the robot to rotate until vision/gyro says we're facing the target heading."""
+    send_cmd({"face": float(theta_deg)})
+    print(f"📡 Sent face → θ={theta_deg:.1f}°")
