@@ -1,15 +1,9 @@
-# camera_io.py
-#
-# Grab frames from the camera (tries multiple Windows backends)
-# and show them on screen, handling mouse clicks and keypresses.
-
-
 import cv2
 import traceback
 
-from robot_client import config
-from robot_client import robot_comm
-from robot_client import navigation
+from robot_client import config, robot_comm, navigation
+from robot_client.navigation.planner import compute_best_route
+from robot_client import detection
 
 def capture_frames(frame_queue, stop_event):
     """Capture camera frames, trying multiple Windows backends."""
@@ -56,7 +50,6 @@ def capture_frames(frame_queue, stop_event):
                 try:
                     frame_queue.put(frame, timeout=0.02)
                 except Exception:
-                    # queue might be full or closed
                     pass
     except Exception:
         print("❌ Unexpected error in capture_frames:")
@@ -68,8 +61,7 @@ def capture_frames(frame_queue, stop_event):
 
 
 def display_frames(output_queue, stop_event):
-    """Show frames, handle keypresses & mouse clicks, and send routes."""
-    # note: navigation.selected_goal / pending_route / full_grid_path are module globals
+    """Show frames, handle keypresses & mouse clicks, plan & send routes on 's'."""
     cv2.namedWindow("Live Object Detection")
     cv2.setMouseCallback("Live Object Detection", navigation.click_to_set_corners)
 
@@ -78,7 +70,6 @@ def display_frames(output_queue, stop_event):
             try:
                 frame = output_queue.get(timeout=0.02)
             except Exception:
-                # No frame available — still handle keypresses
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord('q'):
                     stop_event.set()
@@ -90,6 +81,19 @@ def display_frames(output_queue, stop_event):
                     navigation.selected_goal = 'B'
                     print("✅ Selected Goal B")
                 elif key == ord('s'):
+                    # Plan a fresh route based on detected balls
+                    if detection.ball_positions_cm:
+                        route_cm, grid_cells = compute_best_route(
+                            detection.ball_positions_cm,
+                            navigation.selected_goal
+                        )
+                        print(f"⚠️  Planned route: {len(route_cm)} waypoints, {len(grid_cells)} grid points")
+                        navigation.pending_route = route_cm
+                        navigation.full_grid_path = grid_cells
+                    else:
+                        print("⚠️  No balls detected; cannot plan route")
+
+                    # Save route and send path if available
                     if navigation.pending_route:
                         navigation.save_route_to_file(navigation.pending_route)
                     if navigation.full_grid_path:
@@ -108,6 +112,17 @@ def display_frames(output_queue, stop_event):
                 navigation.selected_goal = 'B'
                 print("✅ Selected Goal B")
             elif key == ord('s'):
+                # Plan a fresh route based on detected balls
+                if detection.ball_positions_cm:
+                    route_cm, grid_cells = compute_best_route(
+                        detection.ball_positions_cm,
+                        navigation.selected_goal
+                    )
+                    print(f"⚠️  Planned route: {len(route_cm)} waypoints, {len(grid_cells)} grid points")
+                else:
+                    print("⚠️  No balls detected; cannot plan route")
+
+                # Save route and send path if available
                 if navigation.pending_route:
                     navigation.save_route_to_file(navigation.pending_route)
                 if navigation.full_grid_path:

@@ -19,7 +19,7 @@ def get_heading():
 
 def calibrate_gyro():
     global gyro_offset
-    print("Calibrating gyro, keep robot still…")
+    print("Calibrating gyro, keep robot still...")
     gyro.calibrate()    # built-in: enters GYRO-CAL, waits for stability, returns to GYRO-ANG
     gyro.reset()        # zero the angle reading
     gyro_offset = 0.0

@@ -39,9 +39,9 @@ def send_pose(x_cm, y_cm, theta_deg):
     try:
         pose_msg = {
             "pose": {
-                "x": round(x_cm, 2),
-                "y": round(y_cm, 2),
-                "theta": round(theta_deg, 1)
+                "x": float(round(x_cm, 2)),
+                "y": float(round(y_cm, 2)),
+                "theta": float(round(theta_deg, 1))
             }
         }
         data = json.dumps(pose_msg).encode("utf-8") + b'\n'
