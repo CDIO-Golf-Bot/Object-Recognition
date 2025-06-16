@@ -3,7 +3,6 @@ import cv2
 import traceback
 import math
 import time
-import stopevent
 
 from robot_client import config, robot_comm, navigation, detection
 from robot_client.navigation.planner import compute_best_route
@@ -40,6 +39,11 @@ def capture_frames(frame_queue, stop_event):
     cap.set(cv2.CAP_PROP_FRAME_WIDTH,  config.FRAME_WIDTH)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.FRAME_HEIGHT)
 
+    actual_w = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+    actual_h = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+    actual_f = cap.get(cv2.CAP_PROP_FPS)
+    print(f"📷 Camera running at {actual_w:.0f}×{actual_h:.0f} @ {actual_f:.1f} FPS")
+
     cnt = 0
     try:
         while not stop_event.is_set():
@@ -62,11 +66,15 @@ def capture_frames(frame_queue, stop_event):
         cap.release()
         print("capture_frames exiting")
 
-
 def display_frames(output_queue, stop_event):
     """Show frames, handle keypresses & mouse clicks, plan & stream on 's'."""
     cv2.namedWindow("Live Object Detection")
     cv2.setMouseCallback("Live Object Detection", navigation.click_to_set_corners)
+
+    # ─── FPS tracking ──────────────────────────────────────────────────────────
+    fps = 0.0
+    frame_counter = 0
+    fps_timer = time.time()
 
     while not stop_event.is_set():
         frame = None
@@ -99,28 +107,48 @@ def display_frames(output_queue, stop_event):
 
                 if route_cm:
                     navigation.pending_route = route_cm
-                    navigation.full_grid_path  = grid_cells
+                    navigation.full_grid_path = grid_cells
                     print("Planned route: {} waypoints, {} grid points"
-                        .format(len(route_cm), len(grid_cells)))
+                          .format(len(route_cm), len(grid_cells)))
 
-                    # 2️⃣ Save it (optional) and send the compressed path
+                    # 2️⃣ Save it (optional) and start the executor thread
                     navigation.save_route_to_file(navigation.pending_route)
-
-                    # new: stream one‐by‐one goto commands in a background thread
-                    threading.Thread(target=_execute_route, args=(navigation.pending_route,), daemon=True).start()
-                    
-                    # robot_comm.send_path(navigation.full_grid_path, config.ROBOT_HEADING)      # Old setup, sending the full path
+                    threading.Thread(
+                        target=_execute_route,
+                        args=(navigation.pending_route, stop_event),
+                        daemon=True
+                    ).start()
                 else:
                     print("Route computation returned no waypoints.")
 
-
         # Display frame if available
         if frame is not None:
+            # ─── Update FPS once per second ────────────────────────────────────
+            frame_counter += 1
+            now = time.time()
+            elapsed = now - fps_timer
+            if elapsed >= 1.0:
+                fps = frame_counter / elapsed
+                frame_counter = 0
+                fps_timer = now
+
+            # ─── Draw FPS onto the frame ───────────────────────────────────────
+            fps_text = f"FPS: {fps:.1f}"
+            cv2.putText(
+                frame, fps_text,
+                org=(10, 30),  # top-left corner
+                fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                fontScale=1.0,
+                color=(0, 255, 0),
+                thickness=2
+            )
+
             cv2.imshow("Live Object Detection", frame)
 
     # Cleanup
     cv2.destroyAllWindows()
     print("display_frames exiting")
+
 
 def _execute_route(route_cm, stop_event):
     """

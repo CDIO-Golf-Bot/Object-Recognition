@@ -14,12 +14,12 @@ PROJECT_NAME     = "newpingpongdetector"
 VERSION          = 1
 
 # === Camera Settings ===
-CAMERA_INDEX   = 1
-FRAME_WIDTH    = 1280
+CAMERA_INDEX   = 0
+FRAME_WIDTH    = 1080
 FRAME_HEIGHT   = 720
 FRAMES_PER_SEC = 30
 BUFFER_SIZE    = 1
-SKIP_FRAMES = 3
+SKIP_FRAMES = 2
 
 # === Real-World Grid Dimensions ===
 REAL_WIDTH_CM   = 167

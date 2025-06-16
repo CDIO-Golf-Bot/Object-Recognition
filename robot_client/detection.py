@@ -54,13 +54,13 @@ def process_frames(frame_queue, output_queue, stop_event):
                     heading_deg = navigation.compute_aruco_heading(pts)
 
                     # 1️⃣ Offset start to 'front' of tag if configured
-                    offset = getattr(config, 'START_OFFSET_CM', 0.0)
-                    if offset != 0.0:
-                        theta = np.radians(heading_deg)
-                        dx = offset * np.cos(theta)
-                        dy = -offset * np.sin(theta)
-                        x_cm += dx
-                        y_cm += dy
+                    #offset = getattr(config, 'START_OFFSET_CM', 0.0)
+                    #if offset != 0.0:
+                    #    theta = np.radians(heading_deg)
+                    #    dx = offset * np.cos(theta)
+                    #    dy = -offset * np.sin(theta)
+                    #    x_cm += dx
+                    #    y_cm += dy
 
                     # 2️⃣ Write into planner state so compute_best_route sees it:
                     planner.robot_position_cm = (x_cm, y_cm)
