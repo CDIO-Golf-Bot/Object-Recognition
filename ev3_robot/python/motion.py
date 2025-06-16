@@ -1,9 +1,20 @@
 #!/usr/bin/env python3
-import time, math
-import json
+import time, math, json
 from ev3dev2.motor import SpeedPercent
 import config as config, hardware
 
+# Attempt to initialize Ultrasonic Sensor (port from config)
+try:
+    from ev3dev2.sensor.lego import UltrasonicSensor
+    from ev3dev2.sensor import INPUT_1
+    distance_sensor = UltrasonicSensor(INPUT_1)
+    ultrasonic_available = True
+except Exception:
+    print("Warning: Ultrasonic sensor not available.")
+    distance_sensor = None
+    ultrasonic_available = False
+
+# Shared robot pose for fuse
 robot_pose = {
     "x": None,
     "y": None,
@@ -11,20 +22,26 @@ robot_pose = {
     "timestamp": time.time()
 }
 
+# Internal helpers
+
 def _start_aux():    hardware.aux_motor.on(config.AUX_FORWARD_PCT)
+
 def _stop_aux():     hardware.aux_motor.off()
+
 def _reverse_aux():  
     hardware.aux_motor.on(config.AUX_REVERSE_PCT)
     time.sleep(config.AUX_REVERSE_SEC)
     hardware.aux_motor.off()
+
 
 def get_corrected_heading():
     if robot_pose["theta"] is not None and time.time() - robot_pose["timestamp"] < 0.5:
         return robot_pose["theta"]
     return hardware.get_heading()
 
-def drive_distance(distance_cm, speed_pct=None, target_angle=None):
-    """Drive straight for a given distance using heading PID (I-term disabled)."""
+
+def drive_distance(distance_cm, speed_pct=None, target_angle=None, use_ultrasonic=False):
+    """Drive straight for distance_cm using encoders + optional ultrasonic feedback."""
     if speed_pct is None:
         speed_pct = config.DRIVE_SPEED_PCT
     if target_angle is None:
@@ -34,19 +51,39 @@ def drive_distance(distance_cm, speed_pct=None, target_angle=None):
     integral = 0.0
     last_error = 0.0
 
+    # If ultrasonic, record initial reading
+    if use_ultrasonic and ultrasonic_available:
+        start_dist = distance_sensor.distance_centimeters
+        print("Ultrasonic start: {:.2f} cm for target {:.2f} cm".format(start_dist, distance_cm))
+    else:
+        start_dist = None
+        print("Ultrasonic sensor data unavailable.")
+
     _start_aux()
     try:
         start_l = hardware.tank.left_motor.position
         start_r = hardware.tank.right_motor.position
 
         while True:
+            # Check encoder condition
             pos_l = hardware.tank.left_motor.position - start_l
             pos_r = hardware.tank.right_motor.position - start_r
             avg_rot = (abs(pos_l) + abs(pos_r)) / 2.0 / 360.0
-            if avg_rot >= rotations:
+            encoder_done = avg_rot >= rotations
+
+            # Check ultrasonic condition
+            if use_ultrasonic and ultrasonic_available and start_dist is not None:
+                current = distance_sensor.distance_centimeters
+                traveled = start_dist - current
+                ultra_done = traveled >= distance_cm
+            else:
+                ultra_done = False
+
+            # Break if either method satisfied
+            if encoder_done or ultra_done:
                 break
 
-            # PID on heading (I-term removed)
+            # PID heading correction
             error = ((target_angle - hardware.get_heading() + 540) % 360) - 180
             if abs(error) < 1.0:
                 error = 0.0
@@ -55,7 +92,7 @@ def drive_distance(distance_cm, speed_pct=None, target_angle=None):
 
             correction = (
                 config.GYRO_KP * error +
-                0.0                   +  # integral term disabled
+                0.0 +  # integral disabled
                 config.GYRO_KD * derivative
             )
             correction = max(min(correction, config.MAX_CORRECTION), -config.MAX_CORRECTION)
@@ -68,6 +105,13 @@ def drive_distance(distance_cm, speed_pct=None, target_angle=None):
     finally:
         hardware.tank.off()
         _stop_aux()
+
+    # Debug output
+    print("drive_distance: encoder_rot={:.2f}, target_rot={:.2f}".format(avg_rot, rotations))
+    if use_ultrasonic and ultrasonic_available and start_dist is not None:
+        end_dist = distance_sensor.distance_centimeters
+        print("Ultrasonic end: {:.2f} cm, traveled={:.2f} cm".format(end_dist, (start_dist-end_dist)))
+
 
 
 def perform_turn(angle_deg):
