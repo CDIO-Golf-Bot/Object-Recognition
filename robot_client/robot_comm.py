@@ -57,7 +57,7 @@ def send_pose(x_cm, y_cm, theta_deg):
     data = json.dumps(pose_msg).encode('utf-8') + b'\n'
     try:
         robot_sock.sendall(data)
-        print(f"📡 Sent pose: x={pose_msg['pose']['x']:.2f}, y={pose_msg['pose']['y']:.2f}, θ={pose_msg['pose']['theta']:.1f}")
+        #print(f"📡 Sent pose: x={pose_msg['pose']['x']:.2f}, y={pose_msg['pose']['y']:.2f}, θ={pose_msg['pose']['theta']:.1f}")
     except Exception as e:
         print(f"❌ Failed to send pose: {e}")
 

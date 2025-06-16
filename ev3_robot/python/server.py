@@ -4,6 +4,7 @@ import config as config, hardware, motion
 
 def run_server(host='', port=12345):
     """Main TCP loop: accept connections, recv JSON, dispatch to motion."""
+    # Initial calibration at server start
     hardware.calibrate_gyro()
 
     with socket.socket() as srv:
@@ -53,8 +54,10 @@ def run_server(host='', port=12345):
                                     'timestamp': time.time()
                                 })
 
-                            # Legacy full-path command
+                            # Legacy full-path command: recalibrate once before running
                             elif 'path' in cmd and 'heading' in cmd:
+                                # Recalibrate gyro for new path
+                                hardware.calibrate_gyro()
                                 motion.follow_path(cmd['path'], cmd['heading'])
 
                             # Incremental: turn or distance

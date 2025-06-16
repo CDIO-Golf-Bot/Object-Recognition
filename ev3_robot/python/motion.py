@@ -35,6 +35,7 @@ def _reverse_aux():
 
 
 def get_corrected_heading():
+    # Use vision pose when fresh, otherwise gyro
     if robot_pose["theta"] is not None and time.time() - robot_pose["timestamp"] < 0.5:
         return robot_pose["theta"]
     return hardware.get_heading()
@@ -45,7 +46,7 @@ def drive_distance(distance_cm, speed_pct=None, target_angle=None, use_ultrasoni
     if speed_pct is None:
         speed_pct = config.DRIVE_SPEED_PCT
     if target_angle is None:
-        target_angle = hardware.get_heading()
+        target_angle = get_corrected_heading()
 
     rotations = distance_cm / config.WHEEL_CIRC_CM
     integral = 0.0
@@ -57,7 +58,8 @@ def drive_distance(distance_cm, speed_pct=None, target_angle=None, use_ultrasoni
         print("Ultrasonic start: {:.2f} cm for target {:.2f} cm".format(start_dist, distance_cm))
     else:
         start_dist = None
-        print("Ultrasonic sensor data unavailable.")
+        if use_ultrasonic:
+            print("Ultrasonic sensor data unavailable.")
 
     _start_aux()
     try:
@@ -92,7 +94,6 @@ def drive_distance(distance_cm, speed_pct=None, target_angle=None, use_ultrasoni
 
             correction = (
                 config.GYRO_KP * error +
-                0.0 +  # integral disabled
                 config.GYRO_KD * derivative
             )
             correction = max(min(correction, config.MAX_CORRECTION), -config.MAX_CORRECTION)
@@ -113,13 +114,13 @@ def drive_distance(distance_cm, speed_pct=None, target_angle=None, use_ultrasoni
         print("Ultrasonic end: {:.2f} cm, traveled={:.2f} cm".format(end_dist, (start_dist-end_dist)))
 
 
-
 def perform_turn(angle_deg):
     """Rotate in place by angle_deg (±), using gyro feedback."""
     current_heading = get_corrected_heading()
     target = (current_heading + angle_deg) % 360.0
     _start_aux()
     try:
+        # Primary gyro-based turn
         while abs(((hardware.get_heading() - target + 540) % 360) - 180) > config.ANGLE_TOLERANCE:
             err = ((target - hardware.get_heading() + 540) % 360) - 180
             power = max(min(abs(err) * 0.4, config.TURN_SPEED_PCT), 5)
@@ -130,53 +131,77 @@ def perform_turn(angle_deg):
             time.sleep(0.01)
         hardware.tank.off()
         time.sleep(0.1)
+
+        # Final vision-based micro-correction
+        if robot_pose["theta"] is not None and time.time() - robot_pose["timestamp"] < 0.5:
+            residual = ((robot_pose["theta"] - hardware.get_heading() + 540) % 360) - 180
+            if abs(residual) > config.ANGLE_TOLERANCE:
+                print("Vision-based turn-correction: {:.1f} deg".format(residual))
+                # slow spin to correct residual
+                adjust_power = 5
+                if residual > 0:
+                    hardware.tank.on(-adjust_power, adjust_power)
+                else:
+                    hardware.tank.on(adjust_power, -adjust_power)
+                time.sleep(abs(residual) / 30.0)
+                hardware.tank.off()
     finally:
         hardware.tank.off()
         _stop_aux()
 
 
 def follow_path(points, start_heading_deg):
-    """Turn & drive each leg, passing exact segment heading into drive_distance."""
+    """Turn & drive each leg, fusing vision pose when available."""
     hardware.gyro_offset = start_heading_deg
     hardware.calibrate_gyro()
     print("Gyro offset={:.1f} (gyro={})".format(hardware.gyro_offset, hardware.gyro.angle))
 
-    cur_heading = get_corrected_heading()
-    cur_x, cur_y = points[0]
+    # Initialize from vision if fresh
+    if robot_pose["x"] is not None and time.time() - robot_pose["timestamp"] < 0.5:
+        cur_x = robot_pose["x"] / config.CELL_SIZE_CM
+        cur_y = robot_pose["y"] / config.CELL_SIZE_CM
+        cur_heading = robot_pose["theta"]
+    else:
+        cur_x, cur_y = points[0]
+        cur_heading = get_corrected_heading()
 
     for nx, ny in points[1:]:
+        # Fuse vision at each segment start
+        if robot_pose["x"] is not None and time.time() - robot_pose["timestamp"] < 0.5:
+            # Update from latest vision
+            cur_x = robot_pose["x"] / config.CELL_SIZE_CM
+            cur_y = robot_pose["y"] / config.CELL_SIZE_CM
+            cur_heading = robot_pose["theta"]
+
         dx = (nx - cur_x) * config.CELL_SIZE_CM
         dy = (ny - cur_y) * config.CELL_SIZE_CM
-
-        # Desired direction to next point
         target_heading = math.degrees(math.atan2(dy, dx)) % 360.0
 
-        # Correct current heading based on live drift
+        # Detect and correct large drift
         live_heading = get_corrected_heading()
         drift_error = ((live_heading - cur_heading + 540) % 360) - 180
         if abs(drift_error) > 5.0:
-            print("Drift detected ({} deg), correcting...".format(round(drift_error, 1)))
+            print("Drift detected ({:.1f} deg), correcting...".format(drift_error))
             perform_turn(drift_error)
             cur_heading = get_corrected_heading()
 
-        # Now compute actual angle difference to next point
+        # Turn toward next waypoint
         delta = ((target_heading - cur_heading + 180) % 360) - 180
         if abs(delta) > config.ANGLE_TOLERANCE:
             perform_turn(delta)
             cur_heading = get_corrected_heading()
 
-        # Drive to the point
+        # Drive straight to waypoint
         distance = math.hypot(dx, dy)
         if distance > 0:
             drive_distance(distance, speed_pct=config.DRIVE_SPEED_PCT, target_angle=target_heading)
 
-        # Update current state
         cur_heading = target_heading
         cur_x, cur_y = nx, ny
 
 
 def pure_pursuit_follow(path, lookahead_cm=15, speed_pct=None):
-    """Continuously follow a path using the Pure Pursuit algorithm."""
+    """Continuously follow a path using the Pure Pursuit algorithm, fusing vision pose."""
     if speed_pct is None:
         speed_pct = config.DRIVE_SPEED_PCT
 
@@ -184,56 +209,55 @@ def pure_pursuit_follow(path, lookahead_cm=15, speed_pct=None):
     x, y = path[0]
     hardware.calibrate_gyro()
 
-    def find_lookahead_point(path, x, y, L):
-        # Find the closest segment point at distance >= L from (x,y)
-        for i in range(len(path)-1):
-            x1, y1 = path[i]
-            x2, y2 = path[i+1]
-            # parametric along segment
+    def find_lookahead_point(path_pts, x, y, L):
+        for i in range(len(path_pts)-1):
+            x1, y1 = path_pts[i]
+            x2, y2 = path_pts[i+1]
             dx, dy = x2-x1, y2-y1
             seg_len = math.hypot(dx, dy)
             if seg_len < 1e-6:
                 continue
-            # project current position onto segment
             t = ((x-x1)*dx + (y-y1)*dy) / (seg_len**2)
             t = max(0.0, min(1.0, t))
-            # point on segment
             px, py = x1 + t*dx, y1 + t*dy
             if math.hypot(px-x, py-y) >= L:
                 return (px, py)
-        return path[-1]
+        return path_pts[-1]
 
     _start_aux()
     try:
         while True:
-            # read pose
-            heading = math.radians(hardware.get_heading())
-            # convert grid to cm coords
-            x_cm, y_cm = x*config.CELL_SIZE_CM, y*config.CELL_SIZE_CM
+            # Grab vision pose if fresh
+            if robot_pose["x"] is not None and time.time() - robot_pose["timestamp"] < 0.5:
+                x_cm = robot_pose["x"]
+                y_cm = robot_pose["y"]
+            else:
+                # convert grid to cm coords if no fresh vision
+                x_cm, y_cm = x * config.CELL_SIZE_CM, y * config.CELL_SIZE_CM
 
-            look_pt = find_lookahead_point([(px*config.CELL_SIZE_CM, py*config.CELL_SIZE_CM) for (px,py) in path],
-                                           x_cm, y_cm, lookahead_cm)
-            # desired heading
+            heading = math.radians(hardware.get_heading())
+            look_pt = find_lookahead_point(
+                [(px*config.CELL_SIZE_CM, py*config.CELL_SIZE_CM) for (px,py) in path],
+                x_cm, y_cm, lookahead_cm)
             desired_heading = math.degrees(math.atan2(look_pt[1]-y_cm, look_pt[0]-x_cm))
 
             # PID steer toward lookahead
             error = ((desired_heading - hardware.get_heading() + 540) % 360) - 180
-            derivative = error  # simplistic derivative
+            derivative = error
             corr = (config.GYRO_KP*error + config.GYRO_KD*derivative)
             corr = max(min(corr, config.MAX_CORRECTION), -config.MAX_CORRECTION)
 
             l_spd = max(min(speed_pct - corr + config.LEFT_BIAS, 100), -100)
             r_spd = max(min(speed_pct + corr, 100), -100)
-
             hardware.tank.on(SpeedPercent(l_spd), SpeedPercent(r_spd))
             time.sleep(0.01)
 
-            # update pose using odometry
-            # simple forward integration
-            d = speed_pct/100 * config.WHEEL_CIRC_CM * 0.01
-            x_cm += d * math.cos(heading)
-            y_cm += d * math.sin(heading)
-            x, y = x_cm/config.CELL_SIZE_CM, y_cm/config.CELL_SIZE_CM
+            # Odometry update if no fresh vision
+            if not (robot_pose["x"] is not None and time.time() - robot_pose["timestamp"] < 0.5):
+                d = speed_pct/100 * config.WHEEL_CIRC_CM * 0.01
+                x_cm += d * math.cos(heading)
+                y_cm += d * math.sin(heading)
+                x, y = x_cm/config.CELL_SIZE_CM, y_cm/config.CELL_SIZE_CM
 
     finally:
         hardware.tank.off()
@@ -243,14 +267,14 @@ def pure_pursuit_follow(path, lookahead_cm=15, speed_pct=None):
 def handle_command(cmd, buf):
     """Process a single JSON command from the network."""
     if 'turn' in cmd:
-        if buf['distance_buffer'] > 0:
+        if buf.get('distance_buffer', 0) > 0:
             drive_distance(buf['distance_buffer'])
             buf['distance_buffer'] = 0
         perform_turn(float(cmd['turn']))
 
     if 'distance' in cmd:
-        buf['distance_buffer'] += float(cmd['distance'])
+        buf['distance_buffer'] = buf.get('distance_buffer', 0) + float(cmd['distance'])
 
     if cmd.get('deliver'):
-        print("DELIVER".format())
+        print("DELIVER")
         _reverse_aux()
