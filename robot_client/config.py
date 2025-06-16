@@ -19,7 +19,7 @@ FRAME_WIDTH    = 1080
 FRAME_HEIGHT   = 620
 FRAMES_PER_SEC = 30
 BUFFER_SIZE    = 1
-SKIP_FRAMES = 1
+SKIP_FRAMES = 0
 
 # === Real-World Grid Dimensions ===
 REAL_WIDTH_CM   = 167

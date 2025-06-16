@@ -3,13 +3,14 @@ import cv2
 import traceback
 import math
 import time
+from queue import Empty
 
 from robot_client import config, robot_comm, navigation, detection
 from robot_client.navigation.planner import compute_best_route
 
 
 def capture_frames(frame_queue, stop_event):
-    """Capture camera frames, trying multiple Windows backends."""
+    """Capture camera frames, tagging each with a timestamp and dropping old ones."""
     backends = [
         (cv2.CAP_DSHOW, "DSHOW"),
         (cv2.CAP_MSMF,  "MSMF"),
@@ -20,25 +21,26 @@ def capture_frames(frame_queue, stop_event):
         try:
             tmp = cv2.VideoCapture(config.CAMERA_INDEX, api)
             if tmp.isOpened():
-                print("Camera opened with {} backend".format(name))
+                print(f"Camera opened with {name} backend")
                 cap = tmp
                 break
             else:
                 tmp.release()
-                print("Could not open camera with {} backend".format(name))
         except Exception as e:
-            print("Exception using {} backend: {}".format(name, e))
+            print(f"Exception using {name} backend: {e}")
 
     if cap is None:
-        print("Unable to open camera {}".format(config.CAMERA_INDEX))
+        print(f"Unable to open camera {config.CAMERA_INDEX}")
         stop_event.set()
         return
 
+    # Apply camera settings
     cap.set(cv2.CAP_PROP_BUFFERSIZE, config.BUFFER_SIZE)
     cap.set(cv2.CAP_PROP_FPS,        config.FRAMES_PER_SEC)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH,  config.FRAME_WIDTH)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.FRAME_HEIGHT)
 
+    # Log actual settings
     actual_w = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
     actual_h = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
     actual_f = cap.get(cv2.CAP_PROP_FPS)
@@ -53,11 +55,22 @@ def capture_frames(frame_queue, stop_event):
                 continue
 
             cnt += 1
-            if cnt % config.SKIP_FRAMES == 0:
-                try:
-                    frame_queue.put(frame, timeout=0.02)
-                except Exception:
-                    pass
+            if cnt % max(1, config.SKIP_FRAMES) != 0:
+                continue
+
+            timestamp = time.time()
+            # drop any old frames
+            try:
+                while True:
+                    frame_queue.get_nowait()
+            except Empty:
+                pass
+
+            try:
+                frame_queue.put((frame, timestamp), timeout=0.02)
+            except Exception:
+                pass
+
     except Exception:
         print("Unexpected error in capture_frames:")
         traceback.print_exc()
@@ -66,24 +79,29 @@ def capture_frames(frame_queue, stop_event):
         cap.release()
         print("capture_frames exiting")
 
+
 def display_frames(output_queue, stop_event):
-    """Show frames, handle keypresses & mouse clicks, plan & stream on 's'."""
+    """Show frames with live FPS & latency, handle keypresses & clicks, plan & stream on 's'."""
     cv2.namedWindow("Live Object Detection")
     cv2.setMouseCallback("Live Object Detection", navigation.click_to_set_corners)
 
-    # ─── FPS tracking ──────────────────────────────────────────────────────────
     fps = 0.0
     frame_counter = 0
     fps_timer = time.time()
 
     while not stop_event.is_set():
-        frame = None
         try:
-            frame = output_queue.get(timeout=0.02)
-        except Exception:
-            pass
+            frame, ts = output_queue.get(timeout=0.02)
+            # flush intermediate frames, keep only latest
+            try:
+                while True:
+                    frame, ts = output_queue.get_nowait()
+            except Empty:
+                pass
+        except Empty:
+            continue
 
-        # Handle keypress
+        # Key handling
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q'):
             stop_event.set()
@@ -99,19 +117,15 @@ def display_frames(output_queue, stop_event):
             if not balls:
                 print("No balls detected; cannot plan route.")
             else:
-                # 1️⃣ Plan the full route (in cm & grid cells)
                 route_cm, grid_cells = compute_best_route(
                     balls,
                     navigation.selected_goal
                 )
-
                 if route_cm:
                     navigation.pending_route = route_cm
                     navigation.full_grid_path = grid_cells
-                    print("Planned route: {} waypoints, {} grid points"
-                          .format(len(route_cm), len(grid_cells)))
+                    print(f"Planned route: {len(route_cm)} waypoints, {len(grid_cells)} grid points")
 
-                    # 2️⃣ Save it (optional) and start the executor thread
                     navigation.save_route_to_file(navigation.pending_route)
                     threading.Thread(
                         target=_execute_route,
@@ -121,67 +135,46 @@ def display_frames(output_queue, stop_event):
                 else:
                     print("Route computation returned no waypoints.")
 
-        # Display frame if available
-        if frame is not None:
-            # ─── Update FPS once per second ────────────────────────────────────
-            frame_counter += 1
-            now = time.time()
-            elapsed = now - fps_timer
-            if elapsed >= 1.0:
-                fps = frame_counter / elapsed
-                frame_counter = 0
-                fps_timer = now
+        # Compute FPS & latency
+        frame_counter += 1
+        now = time.time()
+        elapsed = now - fps_timer
+        if elapsed >= 1.0:
+            fps = frame_counter / elapsed
+            frame_counter = 0
+            fps_timer = now
+        latency_ms = (now - ts) * 1000.0
 
-            # ─── Draw FPS onto the frame ───────────────────────────────────────
-            fps_text = f"FPS: {fps:.1f}"
-            cv2.putText(
-                frame, fps_text,
-                org=(10, 30),  # top-left corner
-                fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-                fontScale=1.0,
-                color=(0, 255, 0),
-                thickness=2
-            )
+        # Overlay text
+        cv2.putText(frame, f"FPS: {fps:.1f}", (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0,255,0), 2)
+        cv2.putText(frame, f"LAT: {latency_ms:.0f} ms", (10, 60),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0,255,0), 2)
 
-            cv2.imshow("Live Object Detection", frame)
+        cv2.imshow("Live Object Detection", frame)
 
-    # Cleanup
     cv2.destroyAllWindows()
     print("display_frames exiting")
 
 
 def _execute_route(route_cm, stop_event):
-    """
-    For each (x,y) in route_cm:
-      1) send_goto(x,y)
-      2) wait until detection.planner.robot_position_cm is within ARRIVAL_THRESHOLD_CM
-      3) abort or skip if stop_event is set or timeout expires
-    Then send_deliver().
-    """
+    """Drive each segment until arrival, with abort & timeout."""
     for x_target, y_target in route_cm:
-        # Check for global abort
         if stop_event.is_set():
             print("Route aborted by user")
             return
 
-        # Send the drive command
         robot_comm.send_goto(x_target, y_target)
         start_t = time.time()
-
-        # Poll until arrival, abort, or timeout
         while True:
-            # Abort on stop_event
             if stop_event.is_set():
                 print("Route aborted during segment")
                 return
-
-            # Timeout handling
             elapsed = time.time() - start_t
             if elapsed > config.MAX_SEGMENT_TIME:
                 print(f"⚠️ Timeout ({elapsed:.1f}s) to reach ({x_target:.1f},{y_target:.1f}); skipping")
                 break
 
-            # Check current pose
             pos = detection.planner.robot_position_cm
             if pos is not None:
                 cur_x, cur_y = pos
@@ -190,8 +183,7 @@ def _execute_route(route_cm, stop_event):
                     print(f"Arrived at ({x_target:.1f}, {y_target:.1f}) → d={dist:.1f}cm in {elapsed:.1f}s")
                     break
 
-            time.sleep(0.05)  # adjust polling rate
+            time.sleep(0.05)
 
-    # Final deliver
     robot_comm.send_deliver()
     print("🏁 Route complete, delivered")

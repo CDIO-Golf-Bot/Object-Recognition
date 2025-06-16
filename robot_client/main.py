@@ -1,57 +1,76 @@
 # main.py
-#
-# Kick off threads for camera capture, object detection, and display;
-# manage robot connection and clean shutdown.
-
-
-# IMPORTANT: SETUP PROJECT FIRST BY RUNNING: pip install -e .
-
+# Entry point: wires capture, inference (ArUco+YOLO), and display threads
 
 import threading
 import cv2
 from queue import Queue
 
-from robot_client import config, camera_io, detection, robot_comm, navigation
+from robot_client import config, robot_comm, navigation
+from robot_client.camera_io import capture_frames, display_frames
+from robot_client.detection import process_frames
 
-# === Shared Globals ===
-frame_queue  = Queue(maxsize=1)
-output_queue = Queue(maxsize=1)
-stop_event   = threading.Event()
 
 def main():
     print("🚀 Starting Object Recognition System")
+
+    # Ensure navigation grid is set up
     navigation.ensure_outer_edges_walkable()
-    # selected_goal lives in navigation.selected_goal if you need to set it:
     navigation.selected_goal = 'A'
 
-    # 🔌 Robot connection
+    # Initialize robot connection
     robot_comm.init_robot_connection(config.ROBOT_IP, config.ROBOT_PORT)
 
-    # 🎥 Threads for camera, detection, display
-    cap_thread = threading.Thread(
-        target=camera_io.capture_frames,
-        args=(frame_queue, stop_event)
-    )
-    proc_thread = threading.Thread(
-        target=detection.process_frames,
-        args=(frame_queue, output_queue, stop_event)
-    )
-    disp_thread = threading.Thread(
-        target=camera_io.display_frames,
-        args=(output_queue, stop_event)
+    # Shared stop flag
+    stop_event = threading.Event()
+
+    # Queues between stages
+    capture_queue = Queue(maxsize=1)
+    display_queue = Queue(maxsize=1)
+
+    # Thread: Capture frames & ArUco pose
+    capture_thread = threading.Thread(
+        target=capture_frames,
+        args=(capture_queue, stop_event),
+        name="CaptureThread",
+        daemon=True
     )
 
-    cap_thread.start()
-    proc_thread.start()
-    disp_thread.start()
+    # Thread: YOLO inference + annotation
+    inference_thread = threading.Thread(
+        target=process_frames,
+        args=(capture_queue, display_queue, stop_event),
+        name="InferenceThread",
+        daemon=True
+    )
 
-    disp_thread.join()
-    cap_thread.join()
-    proc_thread.join()
+    # Thread: Display & user interaction
+    display_thread = threading.Thread(
+        target=display_frames,
+        args=(display_queue, stop_event),
+        name="DisplayThread",
+        daemon=True
+    )
 
+    # Start threads
+    capture_thread.start()
+    inference_thread.start()
+    display_thread.start()
+
+    # Wait for display thread to finish (user presses 'q')
+    display_thread.join()
+
+    # Signal all threads to stop
+    stop_event.set()
+
+    # Cleanup remaining threads
+    capture_thread.join()
+    inference_thread.join()
+
+    # Close robot connection and windows
     robot_comm.close_robot_connection()
     cv2.destroyAllWindows()
     print("✂️ Exiting cleanly")
 
-if __name__ == "__main__":
+
+if __name__ == '__main__':
     main()
