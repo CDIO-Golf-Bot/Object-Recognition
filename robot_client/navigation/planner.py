@@ -122,16 +122,25 @@ def get_expanded_obstacles(raw):
                     exp.add((nx, ny))
     return exp
 
-
 def compute_best_route(balls_list, goal_name):
     """
     TSP-like brute-force over up to MAX_BALLS: finds shortest route through balls to goal.
     Returns (route_cm_list, full_route_cells).
+    Only plans if robot_position_cm is known; otherwise returns empty lists.
     """
     global full_grid_path, pending_route, cached_route, last_ball_positions_cm, last_selected_goal
+
+    # 1️⃣ Bail out if we don't have a valid robot start pose
+    if robot_position_cm is None:
+        print("⚠️  Cannot plan route: robot position unknown (no ArUco).")
+        return [], []
+
+    # 2️⃣ No balls detected: nothing to do
     if not balls_list:
         return [], []
-    start_cm = robot_position_cm or config.START_POINT_CM
+
+    # 3️⃣ Use only the ArUco-derived starting position
+    start_cm = robot_position_cm
     start_cell = gu.cm_to_grid_coords(*start_cm)
     grid_w = config.REAL_WIDTH_CM // config.GRID_SPACING_CM
     grid_h = config.REAL_HEIGHT_CM // config.GRID_SPACING_CM
@@ -139,39 +148,40 @@ def compute_best_route(balls_list, goal_name):
     goal_cm = config.GOAL_RANGE[goal_name][0]
     goal_cell = gu.cm_to_grid_coords(goal_cm[0], goal_cm[1])
 
-    # Build distance map
+    # Build distance map between start + balls
     dm = {}
-    for i in range(len(ball_cells)+1):
-        for j in range(i+1, len(ball_cells)+1):
-            p = [start_cell] + ball_cells
-            path = astar(p[i], p[j], grid_w, grid_h, gu.obstacles)
-            dm[(i,j)] = (len(path), path)
-            dm[(j,i)] = (len(path), list(reversed(path)))
+    points = [start_cell] + ball_cells
+    for i in range(len(points)):
+        for j in range(i + 1, len(points)):
+            path = astar(points[i], points[j], grid_w, grid_h, gu.obstacles)
+            dm[(i, j)] = (len(path), path)
+            dm[(j, i)] = (len(path), list(reversed(path)))
 
-    # Distances to goal
+    # Distances from each ball to goal
     bg = {}
     for idx, cell in enumerate(ball_cells, start=1):
-        length, path = len(astar(cell, goal_cell, grid_w, grid_h, gu.obstacles)), astar(cell, goal_cell, grid_w, grid_h, gu.obstacles)
-        bg[idx] = (length, path)
+        path_to_goal = astar(cell, goal_cell, grid_w, grid_h, gu.obstacles)
+        bg[idx] = (len(path_to_goal), path_to_goal)
 
-    # Permute
-    best, best_cost = None, float('inf')
-    indices = list(range(1, len(ball_cells)+1))
+    # Permute through ball pickup orders
+    best_perm, best_cost = None, float('inf')
+    indices = list(range(1, len(ball_cells) + 1))
     for perm in itertools.permutations(indices):
         cost = 0
         seq = [0] + list(perm)
-        for a, b in zip(seq, list(perm)+['G']):
-            cost += bg[a][0] if b == 'G' else dm[(a,b)][0]
+        for a, b in zip(seq, list(perm) + ['G']):
+            cost += bg[a][0] if b == 'G' else dm[(a, b)][0]
         if cost < best_cost:
-            best_cost, best = cost, perm
+            best_cost, best_perm = cost, perm
 
-    # Build full route
-    route_cm = [start_cm] + [(balls_list[i-1][0], balls_list[i-1][1]) for i in best] + [goal_cm]
+    # Build route in cm and grid cells
+    route_cm = [start_cm] + [(balls_list[i-1][0], balls_list[i-1][1]) for i in best_perm] + [goal_cm]
     full_cells = []
-    for a, b in zip([0]+list(best), list(best)+['G']):
-        segment = bg[a][1] if b=='G' else dm[(a,b)][1]
+    for a, b in zip([0] + list(best_perm), list(best_perm) + ['G']):
+        segment = bg[a][1] if b == 'G' else dm[(a, b)][1]
         full_cells.extend(segment)
 
+    # Cache and return
     pending_route = route_cm
     cached_route = route_cm
     last_selected_goal = goal_name

@@ -3,7 +3,6 @@
 # Run YOLO on each frame, detect balls/robot/obstacles,
 # convert to world coordinates, and pass along to navigation.
 
-
 import random
 import cv2
 import numpy as np
@@ -13,6 +12,8 @@ from queue import Empty
 from robot_client import config
 from robot_client import navigation
 from robot_client import robot_comm
+from robot_client.navigation import planner
+from robot_client import config as client_config
 
 # === Global State ===
 yolo_model = YOLO("weights_v3.pt")  # Adjust path if needed
@@ -20,6 +21,7 @@ yolo_model = YOLO("weights_v3.pt")  # Adjust path if needed
 ball_positions_cm = []
 obstacles = set()
 class_colors = {}
+
 
 def process_frames(frame_queue, output_queue, stop_event):
     global ball_positions_cm, obstacles
@@ -36,9 +38,24 @@ def process_frames(frame_queue, output_queue, stop_event):
         aruco = navigation.get_aruco_robot_position_and_heading(original)
         if aruco:
             x_cm, y_cm, heading_deg = aruco
-            navigation.robot_position_cm = (x_cm, y_cm)
-            navigation.ROBOT_HEADING    = heading_deg
-            
+
+            # 1️⃣ Offset start to 'front' of tag if configured
+            offset = getattr(config, 'START_OFFSET_CM', 0.0)
+            if offset != 0.0:
+                theta = np.radians(heading_deg)
+                # forward vector in world coords (x right, y down)
+                dx = offset * np.cos(theta)
+                dy = -offset * np.sin(theta)
+                x_cm += dx
+                y_cm += dy
+
+            # 2️⃣ Write into planner state so compute_best_route sees it:
+            planner.robot_position_cm = (float(x_cm), float(y_cm))
+
+            # 3️⃣ Keep your config heading in sync (so send_path() will use it):
+            client_config.ROBOT_HEADING = float(heading_deg)
+
+            # 4️⃣ (Optional) still send to the robot server if you want live pose updates:
             robot_comm.send_pose(x_cm, y_cm, heading_deg)
 
         # — YOLO inference —
@@ -52,21 +69,23 @@ def process_frames(frame_queue, output_queue, stop_event):
             lbl = results[0].names[int(cls_id)].lower()
             cx, cy = int((x1 + x2) / 2), int((y1 + y2) / 2)
 
-            # choose box color
-            if "ball" in lbl:
-                color = (200, 200, 255) if "white" in lbl else (0, 165, 255)
-            else:
-                color = class_colors.setdefault(lbl, (
-                    random.randint(0, 255),
-                    random.randint(0, 255),
-                    random.randint(0, 255)
-                ))
+            # Hide YOLO robot detection visuals
+            is_robot = "robot" in lbl
+            if not is_robot:
+                # choose box color
+                if "ball" in lbl:
+                    color = (200, 200, 255) if "white" in lbl else (0, 165, 255)
+                else:
+                    color = class_colors.setdefault(lbl, (
+                        random.randint(0, 255),
+                        random.randint(0, 255),
+                        random.randint(0, 255)
+                    ))
+                cv2.rectangle(original, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
+                cv2.putText(original, lbl, (int(x1), int(y1) - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
-            cv2.rectangle(original, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
-            cv2.putText(original, lbl, (int(x1), int(y1) - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
-
-            # map center pixel to real‐world
+            # map center pixel to real‑world
             real = navigation.pixel_to_cm(cx, cy)
             if real:
                 gx, gy = navigation.cm_to_grid_coords(real[0], real[1])
@@ -79,8 +98,9 @@ def process_frames(frame_queue, output_queue, stop_event):
                 ):
                     ball_positions_cm.append((real[0], real[1], lbl, cx, cy))
 
-            elif "robot" in lbl:
-                if real:
+            elif is_robot:
+                # Only use YOLO robot detection if no ArUco pose is available
+                if real and navigation.robot_position_cm is None:
                     navigation.robot_position_cm = real
 
             else:
@@ -89,7 +109,7 @@ def process_frames(frame_queue, output_queue, stop_event):
 
         obstacles |= navigation.get_expanded_obstacles(new_obstacles)
 
-        # — Red‐cross obstacle detection —
+        # — Red‑cross obstacle detection —
         if navigation.homography_matrix is not None:
             hsv = cv2.cvtColor(original, cv2.COLOR_BGR2HSV)
             mask1 = cv2.inRange(hsv, np.array([0,120,70]),  np.array([10,255,255]))

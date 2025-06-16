@@ -70,3 +70,12 @@ def toggle_obstacle_at_pixel(x, y):
     gx, gy = cm_to_grid_coords(*cm)
     if (gx, gy) in obstacles: obstacles.remove((gx,gy))
     else:                  obstacles.add((gx,gy))
+
+
+def world_to_centered(x_cm, y_cm):
+    """
+    Convert (0,0)=top-left → (0,0)=table-center.
+    """
+    cx = x_cm - config.REAL_WIDTH_CM  / 2.0
+    cy = y_cm - config.REAL_HEIGHT_CM / 2.0
+    return cx, cy
