@@ -189,21 +189,26 @@ def compute_best_route(balls_list, goal_name):
     full_grid_path = full_cells
     return route_cm, full_cells
 
-
 def draw_full_route(frame, ball_positions):
     """
-    Draw the route (grid_lines + robot + path) on the given frame.
+    Draw the route (grid_lines + robot + path) on the given frame,
+    with a small dot marking the robot's starting position.
     """
     if cal.homography_matrix is None:
         return frame
 
-    # Draw robot
+    # Draw robot start as a 2px filled dot for precision
     if robot_position_cm:
         pt = np.array([[[robot_position_cm[0], robot_position_cm[1]]]], dtype="float32")
         px, py = cv2.perspectiveTransform(pt, cal.homography_matrix)[0][0]
-        cv2.circle(frame, (int(px), int(py)), 12, config.PATH_COLOR, 3)
-        cv2.putText(frame, "ROBOT", (int(px)-20, int(py)-20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, config.PATH_COLOR, 2)
+        px_i, py_i = int(round(px)), int(round(py))
+        # Red in BGR, radius=4 for prominence
+        cv2.circle(frame, (px_i, py_i), 4, (0, 0, 255), -1)
+        cv2.putText(frame, "ROBOT", (px_i - 20, py_i - 20),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
 
+    # (rest of the overlay drawing logic remains unchanged)
+    
     # Recompute if needed
     global cached_route, full_grid_path
     changed = (cached_route is None or
@@ -215,7 +220,7 @@ def draw_full_route(frame, ball_positions):
     else:
         route_cm = cached_route
 
-    # Overlay
+    # Overlay path
     overlay = frame.copy()
     total_cm = 0
     grid_w = config.REAL_WIDTH_CM // config.GRID_SPACING_CM
