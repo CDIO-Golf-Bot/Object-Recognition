@@ -255,7 +255,7 @@ def rotate_to_heading(target_theta_deg, angle_thresh=10.0):
 
 
 def drive_to_point(target_x_cm, target_y_cm, speed_pct=None,
-                   dist_thresh_cm=2.0):
+                   dist_thresh_cm=4.0):
     if speed_pct is None:
         speed_pct = config.DRIVE_SPEED_PCT
 
