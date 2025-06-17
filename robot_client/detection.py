@@ -8,6 +8,7 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 from queue import Empty
+import time
 
 from robot_client import config, navigation, robot_comm
 from robot_client.navigation import planner
@@ -22,6 +23,9 @@ class_colors = {}
 
 def process_frames(frame_queue, output_queue, stop_event):
     global ball_positions_cm, obstacles
+
+    # Track time for periodic pose sends
+    last_pose_send = time.time()
 
     while not stop_event.is_set():
         # Grab either (frame, timestamp) or raw frame
@@ -51,10 +55,9 @@ def process_frames(frame_queue, output_queue, stop_event):
                     x_cm, y_cm = real
                     heading_deg = navigation.compute_aruco_heading(pts)
 
-                    # Update planner and heading
+                    # Update planner and heading (no immediate send)
                     planner.robot_position_cm = (x_cm, y_cm)
                     client_config.ROBOT_HEADING = float(heading_deg)
-                    robot_comm.send_pose(x_cm, y_cm, heading_deg)
                 break
 
         # — YOLO inference —
@@ -104,4 +107,11 @@ def process_frames(frame_queue, output_queue, stop_event):
         except Exception:
             pass
 
-    print("🖥️ process_frames exiting")
+        # — Periodic pose send every 1 second —
+        now = time.time()
+        if planner.robot_position_cm is not None and now - last_pose_send >= 1.0:
+            x_cm, y_cm = planner.robot_position_cm
+            robot_comm.send_pose(x_cm, y_cm, client_config.ROBOT_HEADING)
+            last_pose_send = now
+
+    print("process_frames exiting")("🖥️ process_frames exiting")

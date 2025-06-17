@@ -1,5 +1,8 @@
 import socket, json, time
-import config as config, hardware, motion
+import config
+import hardware
+import motion
+
 
 
 def run_server(host='', port=12345):

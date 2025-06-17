@@ -15,11 +15,11 @@ VERSION          = 1
 
 # === Camera Settings ===
 CAMERA_INDEX   = 1
-FRAME_WIDTH    = 1080
-FRAME_HEIGHT   = 620
+FRAME_WIDTH    = 1280
+FRAME_HEIGHT   = 720
 FRAMES_PER_SEC = 30
 BUFFER_SIZE    = 1
-SKIP_FRAMES = 0
+SKIP_FRAMES = 1
 
 # === Real-World Grid Dimensions ===
 REAL_WIDTH_CM   = 167
