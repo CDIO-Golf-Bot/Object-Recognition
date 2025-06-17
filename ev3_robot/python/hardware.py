@@ -14,8 +14,8 @@ gyro      = GyroSensor(INPUT_4)
 gyro_offset = 0.0
 
 def get_heading():
-    """Returns current gyro angle (0–360) after offset."""
-    return (gyro.angle + gyro_offset) % 360.0
+    """Returns gyro heading (0–360) with CCW-positive rotation (matches Aruco)."""
+    return (-gyro.angle + gyro_offset) % 360.0
 
 def calibrate_gyro():
     global gyro_offset
