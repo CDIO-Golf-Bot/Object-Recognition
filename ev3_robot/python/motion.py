@@ -270,10 +270,10 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None,
 
     dx = target_x_cm - cur_x
     dy = target_y_cm - cur_y
-    desired_heading = (360 - math.degrees(math.atan2(dy, dx))) % 360
+    initial_heading = (360 - math.degrees(math.atan2(dy, dx))) % 360
     print("[drive_to_point] From ({:.2f}, {:.2f}) to ({:.2f}, {:.2f})".format(cur_x, cur_y, target_x_cm, target_y_cm))
-    print("[drive_to_point] dx={:.2f}, dy={:.2f}, desired_heading={:.2f} deg".format(dx, dy, desired_heading))
-    rotate_to_heading(desired_heading)
+    print("[drive_to_point] dx={:.2f}, dy={:.2f}, desired_heading={:.2f} deg".format(dx, dy, initial_heading))
+    rotate_to_heading(initial_heading)
 
     _start_aux()
     try:
@@ -300,16 +300,26 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None,
                 print("[drive_to_point] Arrived within {} cm of target".format(dist_thresh_cm))
                 break
 
+            # Live recomputed heading to target
             desired = math.degrees(math.atan2(dy, dx)) % 360.0
             current = hardware.get_heading()
             error = ((desired - current + 540) % 360) - 180
             print("[drive_to_point] Current: {:.2f} deg, Desired: {:.2f} deg, Error: {:.2f} deg".format(current, desired, error))
 
-            corr = max(min(config.GYRO_KP * error + config.GYRO_KD * error,
-                           config.MAX_CORRECTION), -config.MAX_CORRECTION)
+            # Adjust correction strength based on distance
+            steering_gain = min(max(dist / 50.0, 0.3), 1.0)  # Scale between 0.3–1.0
+            corr = steering_gain * max(min(config.GYRO_KP * error + config.GYRO_KD * error,
+                                           config.MAX_CORRECTION), -config.MAX_CORRECTION)
 
             l_spd = max(min(speed_pct - corr + config.LEFT_BIAS, 100), -100)
             r_spd = max(min(speed_pct + corr, 100), -100)
+
+            # Optional: avoid dead zones
+            min_drive = 15
+            if abs(l_spd) < min_drive:
+                l_spd = min_drive * (1 if l_spd >= 0 else -1)
+            if abs(r_spd) < min_drive:
+                r_spd = min_drive * (1 if r_spd >= 0 else -1)
 
             print("[drive_to_point] l_spd={:.2f}, r_spd={:.2f}".format(l_spd, r_spd))
             hardware.tank.on(SpeedPercent(l_spd), SpeedPercent(r_spd))
@@ -317,6 +327,7 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None,
     finally:
         hardware.tank.off()
         _stop_aux()
+
 
 
 # Command handler
