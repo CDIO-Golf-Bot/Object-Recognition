@@ -55,21 +55,10 @@ def handle_client(conn, addr):
             cmd = robot_pose_queue.get(timeout=0.1)
         except Empty:
             continue
-
-        # Full-path command
-        if 'path' in cmd and 'heading' in cmd:
-            try:
-                hardware.calibrate_gyro()
-                motion.follow_path(cmd['path'], cmd['heading'])
-            except Exception as e:
-                print("Exception in follow_path: {}".format(e))
-
-        # Other commands (turn, distance, goto, face, deliver)
-        else:
-            try:
-                motion.handle_command(cmd, state)
-            except Exception as e:
-                print("Exception in handle_command({}): {}".format(cmd, e))
+        try:
+            motion.handle_command(cmd, state)
+        except Exception as e:
+            print("Exception in handle_command({}): {}".format(cmd, e))
 
 
 def run_server(host='', port=12345):
@@ -78,7 +67,6 @@ def run_server(host='', port=12345):
         srv.bind((host, port))
         srv.listen(1)
         print("Listening on {}:{}".format(host or '0.0.0.0', port))
-        hardware.calibrate_gyro()
 
         while True:
             try:
