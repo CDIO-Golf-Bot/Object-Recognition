@@ -187,7 +187,7 @@ def compute_best_route(balls_list, goal_name):
     last_selected_goal = goal_name
     last_ball_positions_cm = balls_list.copy()
     full_grid_path = full_cells
-    return route_cm, full_cells
+    return route_cm[1:], full_cells     # skip first element (start)
 
 def draw_full_route(frame, ball_positions):
     """

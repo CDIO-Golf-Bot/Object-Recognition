@@ -109,9 +109,12 @@ def process_frames(frame_queue, output_queue, stop_event):
 
         # — Periodic pose send every 1 second —
         now = time.time()
-        if planner.robot_position_cm is not None and now - last_pose_send >= 1.0:
+        if planner.robot_position_cm is not None and now - last_pose_send >= 0.5:
             x_cm, y_cm = planner.robot_position_cm
-            robot_comm.send_pose(x_cm, y_cm, client_config.ROBOT_HEADING)
+            try:
+                robot_comm.send_pose(x_cm, y_cm, client_config.ROBOT_HEADING)
+            except Exception as e:
+                print(f"🔴 send_pose exception: {e}")
             last_pose_send = now
 
     print("process_frames exiting")("🖥️ process_frames exiting")

@@ -263,7 +263,7 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None,
         while True:
             # Get freshest vision
             if (robot_pose["x"] is not None and
-                (time.time() - robot_pose["timestamp"]) < 0.5):
+                (time.time() - robot_pose["timestamp"]) < 5.5):
                 cur_x = robot_pose["x"]
                 cur_y = robot_pose["y"]
                 last_x, last_y = cur_x, cur_y
@@ -301,7 +301,7 @@ def rotate_to_heading(target_theta_deg, angle_thresh=1.0):
     try:
         while True:
             if (robot_pose["theta"] is not None and
-                (time.time() - robot_pose["timestamp"]) < 0.7):
+                (time.time() - robot_pose["timestamp"]) < 5.5):
                 current = robot_pose["theta"]
             else:
                 current = hardware.get_heading()
