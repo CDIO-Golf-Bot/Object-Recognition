@@ -325,7 +325,7 @@ def drive_to_point(target_x_cm, target_y_cm,
             dy = target_y_cm - cur_y
             distance = math.hypot(dx, dy)
             if distance <= dist_thresh_cm:
-                print(f"Arrived within {dist_thresh_cm}cm of target")
+                print("Arrived within {}cm of target".format(dist_thresh_cm))
                 break
 
             # compute desired heading toward target
@@ -363,7 +363,7 @@ def rotate_to_heading(target_theta_deg, angle_thresh=1.0):
 
             error = ((target_theta_deg - current + 540) % 360) - 180
             if abs(error) <= angle_thresh:
-                print(f"Heading within {angle_thresh}°")
+                print("Heading within ".format(angle_thresh))
                 break
 
             # simple P controller on turn speed
