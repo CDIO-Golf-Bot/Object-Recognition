@@ -342,6 +342,7 @@ def handle_command(cmd, buf):
         buf['distance_buffer'] = buf.get('distance_buffer', 0) + float(cmd['distance'])
 
     if cmd.get('deliver'):
+        rotate_to_heading(0.0)
         _reverse_aux()
 
     if 'goto' in cmd:
