@@ -37,13 +37,7 @@ def handle_client(conn, addr):
                             'theta':     float(cmd['pose']['theta']),
                             'timestamp': time.time()
                         })
-                        print(
-                            "Pose recv: {x:.1f},{y:.1f} (age {age:.2f}s)".format(
-                                x=motion.robot_pose['x'],
-                                y=motion.robot_pose['y'],
-                                age=time.time() - motion.robot_pose['timestamp']
-                            )
-                        )
+                        #print( "Pose recv: {x:.1f},{y:.1f} (age {age:.2f}s)".format( x=motion.robot_pose['x'], y=motion.robot_pose['y'], age=time.time() - motion.robot_pose['timestamp']))
                         continue
 
                     # Enqueue non-pose commands

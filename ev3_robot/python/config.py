@@ -21,11 +21,11 @@ LEFT_BIAS       = 5.0
 # SPEEDS
 # ————————————————————————
 TURN_SPEED_PCT  = 30
-DRIVE_SPEED_PCT = 30
+DRIVE_SPEED_PCT = 35
 
 # ————————————————————————
 # AUX MOTOR
 # ————————————————————————
-AUX_FORWARD_PCT = 35
-AUX_REVERSE_PCT = -35
+AUX_FORWARD_PCT = 25
+AUX_REVERSE_PCT = -25
 AUX_REVERSE_SEC = 1.5

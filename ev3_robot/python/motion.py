@@ -222,6 +222,103 @@ def pure_pursuit_follow(path, lookahead_cm=15, speed_pct=None):
         hardware.tank.off()
         _stop_aux()
 
+
+def rotate_to_heading(target_theta_deg, angle_thresh=10.0):
+    print("[rotate_to_heading] Target: {:.2f} deg (tolerance {} deg)".format(target_theta_deg, angle_thresh))
+    _start_aux()
+    try:
+        while True:
+            if (robot_pose["theta"] is not None and
+                (time.time() - robot_pose["timestamp"]) < 5.5):
+                current = robot_pose["theta"]
+            else:
+                current = hardware.get_heading()
+
+            error = ((target_theta_deg - current + 540) % 360) - 180
+            print("[rotate_to_heading] Current: {:.2f} deg, Error: {:.2f} deg".format(current, error))
+
+            if abs(error) <= angle_thresh:
+                print("[rotate_to_heading] Heading within {} deg: {:.2f} deg".format(angle_thresh, current))
+                break
+
+            power = max(min(abs(error) * 0.5, config.TURN_SPEED_PCT), 5)
+            if error > 0:
+                print("[rotate_to_heading] Turning LEFT (CCW) with power {:.2f}".format(power))
+                hardware.tank.on(power, -power)
+            else:
+                print("[rotate_to_heading] Turning RIGHT (CW) with power {:.2f}".format(power))
+                hardware.tank.on(-power, power)
+            time.sleep(0.01)
+    finally:
+        hardware.tank.off()
+        _stop_aux()
+
+
+def drive_to_point(target_x_cm, target_y_cm, speed_pct=None,
+                   dist_thresh_cm=2.0):
+    if speed_pct is None:
+        speed_pct = config.DRIVE_SPEED_PCT
+
+    # Get current position (wait for vision if needed)
+    if (robot_pose["x"] is not None and
+        (time.time() - robot_pose["timestamp"]) < 5.5):
+        cur_x = robot_pose["x"]
+        cur_y = robot_pose["y"]
+    else:
+        print("No vision yet, cannot drive")
+        return
+
+    dx = target_x_cm - cur_x
+    dy = target_y_cm - cur_y
+    desired_heading = (360 - math.degrees(math.atan2(dy, dx))) % 360
+    print("[drive_to_point] From ({:.2f}, {:.2f}) to ({:.2f}, {:.2f})".format(cur_x, cur_y, target_x_cm, target_y_cm))
+    print("[drive_to_point] dx={:.2f}, dy={:.2f}, desired_heading={:.2f} deg".format(dx, dy, desired_heading))
+    rotate_to_heading(desired_heading)
+
+    _start_aux()
+    try:
+        last_x = cur_x
+        last_y = cur_y
+
+        while True:
+            if (robot_pose["x"] is not None and
+                (time.time() - robot_pose["timestamp"]) < 5.5):
+                cur_x = robot_pose["x"]
+                cur_y = robot_pose["y"]
+                last_x, last_y = cur_x, cur_y
+            else:
+                if last_x is None:
+                    print("No vision yet, stopping")
+                    break
+                print("No fresh vision, continuing with last known pose")
+                cur_x, cur_y = last_x, last_y
+
+            dx = target_x_cm - cur_x
+            dy = target_y_cm - cur_y
+            dist = math.hypot(dx, dy)
+            if dist <= dist_thresh_cm:
+                print("[drive_to_point] Arrived within {} cm of target".format(dist_thresh_cm))
+                break
+
+            desired = math.degrees(math.atan2(dy, dx)) % 360.0
+            current = hardware.get_heading()
+            error = ((desired - current + 540) % 360) - 180
+            print("[drive_to_point] Current: {:.2f} deg, Desired: {:.2f} deg, Error: {:.2f} deg".format(current, desired, error))
+
+            corr = max(min(config.GYRO_KP * error + config.GYRO_KD * error,
+                           config.MAX_CORRECTION), -config.MAX_CORRECTION)
+
+            l_spd = max(min(speed_pct - corr + config.LEFT_BIAS, 100), -100)
+            r_spd = max(min(speed_pct + corr, 100), -100)
+
+            print("[drive_to_point] l_spd={:.2f}, r_spd={:.2f}".format(l_spd, r_spd))
+            hardware.tank.on(SpeedPercent(l_spd), SpeedPercent(r_spd))
+            time.sleep(0.01)
+    finally:
+        hardware.tank.off()
+        _stop_aux()
+
+
 # Command handler
 def handle_command(cmd, buf):
     if 'turn' in cmd:
@@ -248,75 +345,3 @@ def handle_command(cmd, buf):
             drive_distance(buf['distance_buffer'])
             buf['distance_buffer'] = 0
         rotate_to_heading(float(cmd['face']))
-
-# Drive to point
-def drive_to_point(target_x_cm, target_y_cm, speed_pct=None,
-                   dist_thresh_cm=2.0):
-    if speed_pct is None:
-        speed_pct = config.DRIVE_SPEED_PCT
-
-    _start_aux()
-    try:
-        last_x = None
-        last_y = None
-
-        while True:
-            # Get freshest vision
-            if (robot_pose["x"] is not None and
-                (time.time() - robot_pose["timestamp"]) < 5.5):
-                cur_x = robot_pose["x"]
-                cur_y = robot_pose["y"]
-                last_x, last_y = cur_x, cur_y
-            else:
-                if last_x is None:
-                    print("No vision yet, stopping")
-                    break
-                print("No fresh vision, continuing with last known pose")
-                cur_x, cur_y = last_x, last_y
-
-            dx = target_x_cm - cur_x
-            dy = target_y_cm - cur_y
-            dist = math.hypot(dx, dy)
-            if dist <= dist_thresh_cm:
-                print("Arrived within {}cm of target".format(dist_thresh_cm))
-                break
-
-            desired = math.degrees(math.atan2(dy, dx)) % 360.0
-            current = hardware.get_heading()
-            error = ((desired - current + 540) % 360) - 180
-            corr = max(min(config.GYRO_KP * error + config.GYRO_KD * error,
-                           config.MAX_CORRECTION), -config.MAX_CORRECTION)
-
-            l_spd = max(min(speed_pct - corr + config.LEFT_BIAS, 100), -100)
-            r_spd = max(min(speed_pct + corr, 100), -100)
-            hardware.tank.on(SpeedPercent(l_spd), SpeedPercent(r_spd))
-            time.sleep(0.01)
-    finally:
-        hardware.tank.off()
-        _stop_aux()
-
-# Rotate to heading
-def rotate_to_heading(target_theta_deg, angle_thresh=1.0):
-    _start_aux()
-    try:
-        while True:
-            if (robot_pose["theta"] is not None and
-                (time.time() - robot_pose["timestamp"]) < 5.5):
-                current = robot_pose["theta"]
-            else:
-                current = hardware.get_heading()
-
-            error = ((target_theta_deg - current + 540) % 360) - 180
-            if abs(error) <= angle_thresh:
-                print("Heading within {}deg".format(angle_thresh))
-                break
-
-            power = max(min(abs(error) * 0.5, config.TURN_SPEED_PCT), 5)
-            if error > 0:
-                hardware.tank.on(-power, power)
-            else:
-                hardware.tank.on(power, -power)
-            time.sleep(0.01)
-    finally:
-        hardware.tank.off()
-        _stop_aux()
