@@ -6,7 +6,10 @@ from ev3dev2.motor import SpeedPercent
 import config
 import hardware
 import utils
+from HeadingFilter import HeadingFilter
 
+# choose your blend: e.g. 90% gyro, 10% ArUco
+heading_filter = HeadingFilter(alpha=0.9)
 
 # Attempt to initialize Ultrasonic Sensor (port from config)
 try:
