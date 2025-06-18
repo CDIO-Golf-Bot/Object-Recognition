@@ -70,6 +70,8 @@ def rotate_to_heading(target_theta_deg, angle_thresh=config.ANGLE_TOLERANCE):
         _stop_aux()
 
 
+
+
 def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0):
     if speed_pct is None:
         speed_pct = config.DRIVE_SPEED_PCT
@@ -96,27 +98,34 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
     print("[drive_to_point] initial dx={:.2f}, dy={:.2f}, heading={:.2f}".format(dx, dy, initial_heading))
     rotate_to_heading(initial_heading)
 
-    # 4) PD setup
+    # P-only controller setup
     prev_error = 0.0
     LOOP_DT    = 0.01
+    STALE_LIMIT = 1.0  # seconds to wait for fresh vision
 
     def clamp(v, lo, hi):
         return lo if v < lo else hi if v > hi else v
 
+    # keep track of last known good pose
+    last_x, last_y = current_x, current_y
+    last_x, last_y = current_x, current_y
+
     hardware.aux_motor.on(config.AUX_FORWARD_PCT)
     try:
-        last_x, last_y = current_x, current_y
-
         while True:
-            # update pose (or reuse last)
-            if robot_pose["x"] is not None and (time.time() - robot_pose["timestamp"]) < 5.5:
-                current_x, current_y = robot_pose["x"], robot_pose["y"]
-                last_x, last_y = current_x, current_y
-            else:
-                print("[drive_to_point] using last known pose x={:.2f}, y={:.2f}".format(last_x, last_y))
-                current_x, current_y = last_x, last_y
+            # 0) wait for fresh vision
+            age = time.time() - robot_pose["timestamp"]
+            if robot_pose["x"] is None or age > STALE_LIMIT:
+                hardware.tank.off()
+                print("[drive_to_point] waiting for fresh vision (age={:.2f}s)".format(age))
+                time.sleep(0.1)
+                continue
 
-            # check arrival
+            # 1) fresh vision: update pose
+            current_x, current_y = robot_pose["x"], robot_pose["y"]
+            last_x, last_y = current_x, current_y
+
+            # 2) check arrival
             dx = target_x_cm - current_x
             dy = target_y_cm - current_y
             dist = math.hypot(dx, dy)
@@ -125,28 +134,23 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
                 print("[drive_to_point] arrived within {} cm".format(dist_thresh_cm))
                 break
 
-            # compute heading error
+            # 3) compute heading error and PD
             desired = utils.heading_from_deltas(dx, dy)
-            current = hardware.get_heading()
-            error = ((desired - current + 180) % 360) - 180
-            print("[drive_to_point] desired={:.2f}, current={:.2f}, error={:.2f}".format(desired, current, error))
+            current_heading = hardware.get_heading()
+            error = ((desired - current_heading + 180) % 360) - 180
+            print("[drive_to_point] desired={:.2f}, current={:.2f}, error={:.2f}".format(
+                desired, current_heading, error
+            ))
 
-            # true PD
             P = config.GYRO_KP * error
             D = config.GYRO_KD * (error - prev_error) / LOOP_DT
-            raw_corr = P + D
             prev_error = error
-            print("[drive_to_point] P={:.2f}, D={:.2f}, raw_corr={:.2f}".format(P, D, raw_corr))
+            raw_corr = clamp(P + D, -config.MAX_CORRECTION, config.MAX_CORRECTION)
+            print("[drive_to_point] P={:.2f}, D={:.2f}, corr={:.2f}".format(P, D, raw_corr))
 
-            # scale and clamp
-            steering_gain = min(dist / 50.0, 1.0)
-            corr = steering_gain * clamp(raw_corr, -config.MAX_CORRECTION, config.MAX_CORRECTION)
-            print("[drive_to_point] steering_gain={:.2f}, corr={:.2f}".format(steering_gain, corr))
-
-            # apply correction
-            FEED_FORWARD = config.FEED_FORWARD  # e.g. 2.0 percent
-            raw_l = speed_pct + corr + config.LEFT_BIAS + FEED_FORWARD
-            raw_r = speed_pct - corr + config.RIGHT_BIAS - FEED_FORWARD
+            # apply correction + bias + feed-forward
+            raw_l = speed_pct + raw_corr + config.LEFT_BIAS + config.FEED_FORWARD
+            raw_r = speed_pct - raw_corr + config.RIGHT_BIAS - config.FEED_FORWARD
             l_spd = clamp(raw_l, -100, 100)
             r_spd = clamp(raw_r, -100, 100)
             print("[drive_to_point] l_spd={:.2f}, r_spd={:.2f}".format(l_spd, r_spd))
