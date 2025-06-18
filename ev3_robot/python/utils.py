@@ -7,19 +7,20 @@ def normalize_angle(angle):
     """
     return angle % 360
 
+import math
 
 def heading_from_deltas(dx, dy):
     """
-    Compute a compass-style heading (0–360°) from dx, dy offsets.
-
-    - Uses atan2(dy, dx) to get the angle from +X axis (math coords).
-    - Converts to degrees and then shifts to compass:
-        0° = north (positive Y), increasing clockwise.
+    Compute heading (0–360°) in the robot/gyro frame, when:
+      • world +X is right (east), 
+      • world +Y is down  (south),
+      • robot 0° is +X (east), increasing CCW.
     """
-    raw_deg = math.degrees(math.atan2(dy, dx))
-    # Convert math-angle (0°=+X, CCW-positive) to compass (0°=+Y, CW-positive)
-    # First normalize raw to [0,360), then compass adjust
-    return (360 - (raw_deg % 360) + 90) % 360
+    # Flip Y so that world-down → math-up
+    raw = math.degrees(math.atan2(-dy, dx))
+    # Normalize into [0, 360)
+    return raw % 360
+
 
 
 def heading_error(target, current):

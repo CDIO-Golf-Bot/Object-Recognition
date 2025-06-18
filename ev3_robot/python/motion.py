@@ -7,6 +7,7 @@ import config
 import hardware
 import utils
 
+
 # Attempt to initialize Ultrasonic Sensor (port from config)
 try:
     from ev3dev2.sensor.lego import UltrasonicSensor
@@ -69,82 +70,86 @@ def rotate_to_heading(target_theta_deg, angle_thresh=config.ANGLE_TOLERANCE):
         _stop_aux()
 
 
-def drive_to_point(target_x_cm, target_y_cm, speed_pct=None,
-                   dist_thresh_cm=4.0):
+def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=4.0):
     if speed_pct is None:
         speed_pct = config.DRIVE_SPEED_PCT
 
-    if robot_pose["theta"] is not None and (time.time() - robot_pose["timestamp"]) < 0.5:
-        hardware.calibrate_gyro_aruco(robot_pose["theta"])
-
-    # Get current position (wait for vision if needed)
-    if (robot_pose["x"] is not None and
-        (time.time() - robot_pose["timestamp"]) < 5.5):
-        current_x = robot_pose["x"]
-        current_y = robot_pose["y"]
-    else:
-        print("No vision yet, cannot drive")
+    # 1) ONE-TIME gyro fuse up front
+    if robot_pose["theta"] is None:
+        print("No ArUco heading—cannot drive.")
         return
-    
-    _start_aux()
+    hardware.gyro.reset()
+    time.sleep(0.05)
+    hardware.gyro_offset = robot_pose["theta"]
 
+    # 2) grab initial vision fix
+    if robot_pose["x"] is None or (time.time() - robot_pose["timestamp"]) > 5.5:
+        print("No vision yet—cannot drive.")
+        return
+    current_x, current_y = robot_pose["x"], robot_pose["y"]
+
+    # 3) face the goal once
     dx = target_x_cm - current_x
     dy = target_y_cm - current_y
     initial_heading = utils.heading_from_deltas(dx, dy)
-    print("[drive_to_point] From ({:.2f}, {:.2f}) to ({:.2f}, {:.2f})".format(current_x, current_y, target_x_cm, target_y_cm))
-    print("[drive_to_point] dx={:.2f}, dy={:.2f}, desired_heading={:.2f} deg".format(dx, dy, initial_heading))
     rotate_to_heading(initial_heading)
 
+    # 4) PD setup
+    prev_error = 0.0
+    LOOP_DT    = 0.01
+
+    def clamp(v, lo, hi):
+        return lo if v < lo else hi if v > hi else v
+
+    hardware.aux_motor.on(config.AUX_FORWARD_PCT)
     try:
-        last_x = current_x
-        last_y = current_y
+        last_x, last_y = current_x, current_y
 
         while True:
-            if (robot_pose["x"] is not None and
-                (time.time() - robot_pose["timestamp"]) < 5.5):
-                current_x = robot_pose["x"]
-                current_y = robot_pose["y"]
+            # update pose (or reuse last)
+            if robot_pose["x"] is not None and (time.time() - robot_pose["timestamp"]) < 5.5:
+                current_x, current_y = robot_pose["x"], robot_pose["y"]
                 last_x, last_y = current_x, current_y
             else:
-                if last_x is None:
-                    print("No vision yet, stopping")
-                    break
-                print("No fresh vision, continuing with last known pose")
                 current_x, current_y = last_x, last_y
 
-            dx = target_x_cm - current_x        # distance to x and y
+            # check arrival
+            dx = target_x_cm - current_x
             dy = target_y_cm - current_y
-            dist    = math.hypot(dx, dy)       # pythagorean distance to target hypotenuse
+            dist = math.hypot(dx, dy)
             if dist <= dist_thresh_cm:
-                print("[drive_to_point] Arrived within {} cm of target".format(dist_thresh_cm))
+                print("[drive_to_point] Arrived within {} cm".format(dist_thresh_cm))
                 break
 
+            # compute heading error
             desired = utils.heading_from_deltas(dx, dy)
             current = hardware.get_heading()
-            error   = utils.heading_error(desired, current)
-            print("[drive_to_point] Current: {:.2f} deg, Desired: {:.2f} deg, Error: {:.2f} deg".format(current, desired, error))
+            # minimal signed error
+            error = ((desired - current + 180) % 360) - 180
 
-            # Adjust correction strength based on distance
-            steering_gain = min(max(dist / 50.0, 0.3), 1.0)  # Scale between 0.3–1.0
-            corr = steering_gain * max(min(config.GYRO_KP * error + config.GYRO_KD * error,
-                                           config.MAX_CORRECTION), -config.MAX_CORRECTION)
+            # true PD
+            P = config.GYRO_KP * error
+            D = config.GYRO_KD * (error - prev_error) / LOOP_DT
+            raw_corr = P + D
+            prev_error = error
 
-            l_spd = max(min(speed_pct - corr + config.LEFT_BIAS, 100), -100)
-            r_spd = max(min(speed_pct + corr, 100), -100)
+            # scale with distance so you don’t over-steer far away
+            steering_gain = min(max(dist / 50.0, 0.3), 1.0)
+            corr = steering_gain * clamp(raw_corr,
+                                         -config.MAX_CORRECTION,
+                                          config.MAX_CORRECTION)
 
-            # Optional: avoid dead zones
-#            min_drive = 15
-#            if abs(l_spd) < min_drive:
-#                l_spd = min_drive * (1 if l_spd >= 0 else -1)
-#            if abs(r_spd) < min_drive:
-#                r_spd = min_drive * (1 if r_spd >= 0 else -1)
+            # *temporarily* drop LEFT_BIAS (set to 0 in config) so you can tune
+            l_spd = clamp(speed_pct + corr, -100, 100)
+            r_spd = clamp(speed_pct - corr, -100, 100)
 
-            print("[drive_to_point] l_spd={:.2f}, r_spd={:.2f}".format(l_spd, r_spd))
-            hardware.tank.on(SpeedPercent(l_spd), SpeedPercent(r_spd))
-            time.sleep(0.01)
+            hardware.tank.on(SpeedPercent(l_spd),
+                             SpeedPercent(r_spd))
+            time.sleep(LOOP_DT)
+
     finally:
         hardware.tank.off()
-        _stop_aux()
+        hardware.aux_motor.off()
 
 
 

@@ -55,10 +55,19 @@ def handle_client(conn, addr):
             cmd = robot_pose_queue.get(timeout=0.1)
         except Empty:
             continue
-        try:
-            motion.handle_command(cmd, state)
-        except Exception as e:
-            print("Exception in handle_command({}): {}".format(cmd, e))
+        # Full-path command
+        if 'path' in cmd and 'heading' in cmd:
+            try:
+                motion.follow_path(cmd['path'], cmd['heading'])
+            except Exception as e:
+                print("Exception in follow_path: {}".format(e))
+
+        # Other commands (turn, distance, goto, face, deliver)
+        else:
+            try:
+                motion.handle_command(cmd, state)
+            except Exception as e:
+                print("Exception in handle_command({}): {}".format(cmd, e))
 
 
 def run_server(host='', port=12345):
