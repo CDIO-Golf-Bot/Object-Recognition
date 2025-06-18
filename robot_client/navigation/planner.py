@@ -123,6 +123,25 @@ def get_expanded_obstacles(raw):
                     exp.add((nx, ny))
     return exp
 
+def greedy_route(points, astar, grid_w, grid_h, obstacles_set):
+    """
+    Greedily find a route through points using A*.
+    Returns a list of (x_cm, y_cm) tuples.
+    """
+    unvisited = set(range(1, len(points)))  # skip start (0)
+    route = [0]
+    curr = 0
+    while unvisited:
+        # Find nearest unvisited point using A* path length
+        next_node = min(
+            unvisited,
+            key=lambda j: len(astar(points[curr], points[j], grid_w, grid_h, obstacles_set))
+        )
+        route.append(next_node)
+        unvisited.remove(next_node)
+        curr = next_node
+    return route
+
 def compute_best_route(balls_list, goal_name):
     """
     TSP-like brute-force over up to MAX_BALLS: finds shortest route through balls to goal.
@@ -161,29 +180,18 @@ def compute_best_route(balls_list, goal_name):
             dm[(i, j)] = (len(path), path)
             dm[(j, i)] = (len(path), list(reversed(path)))
 
-    # Distances from each ball to goal
-    bg = {}
-    for idx, cell in enumerate(ball_cells, start=1):
-        path_to_goal = astar(cell, goal_cell, grid_w, grid_h, gu.obstacles)
-        bg[idx] = (len(path_to_goal), path_to_goal)
-
-    # Permute through ball pickup orders
-    best_perm, best_cost = None, float('inf')
-    indices = list(range(1, len(ball_cells) + 1))
-    for perm in itertools.permutations(indices):
-        cost = 0
-        seq = [0] + list(perm)
-        for a, b in zip(seq, list(perm) + ['G']):
-            cost += bg[a][0] if b == 'G' else dm[(a, b)][0]
-        if cost < best_cost:
-            best_cost, best_perm = cost, perm
+     # Use greedy_route to get the order
+    route_indices = greedy_route(points, astar, grid_w, grid_h, gu.obstacles)
 
     # Build route in cm and grid cells
-    route_cm = [start_cm] + [(balls_list[i-1][0], balls_list[i-1][1]) for i in best_perm] + [goal_cm]
+    route_cm = [start_cm] + [balls_list[i-1][0:2] for i in route_indices[1:]] + [goal_cm]
     full_cells = []
-    for a, b in zip([0] + list(best_perm), list(best_perm) + ['G']):
-        segment = bg[a][1] if b == 'G' else dm[(a, b)][1]
-        full_cells.extend(segment)
+    for a, b in zip(route_indices, route_indices[1:]):
+        full_cells.extend(dm[(a, b)][1])
+    # Add path from last ball to goal
+    last_ball_idx = route_indices[-1]
+    path_to_goal = astar(points[last_ball_idx], goal_cell, grid_w, grid_h, gu.obstacles)
+    full_cells.extend(path_to_goal)
 
     # Cache and return
     pending_route = route_cm

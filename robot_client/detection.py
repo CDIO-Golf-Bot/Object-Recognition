@@ -167,4 +167,5 @@ def process_frames(frame_queue, output_queue, stop_event):
                 print(f"🔴 send_pose exception: {e}")
             last_pose_send = now
 
-    print("process_frames exiting")("🖥️ process_frames exiting")
+    print("process_frames exiting")
+    print("🖥️ process_frames exiting")
