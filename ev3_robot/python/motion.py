@@ -70,7 +70,7 @@ def rotate_to_heading(target_theta_deg, angle_thresh=config.ANGLE_TOLERANCE):
         _stop_aux()
 
 
-def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=4.0):
+def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0):
     if speed_pct is None:
         speed_pct = config.DRIVE_SPEED_PCT
 
@@ -87,11 +87,13 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=4.0)
         print("No vision yet—cannot drive.")
         return
     current_x, current_y = robot_pose["x"], robot_pose["y"]
+    print("[drive_to_point] start at x={:.2f}, y={:.2f}".format(current_x, current_y))
 
     # 3) face the goal once
     dx = target_x_cm - current_x
     dy = target_y_cm - current_y
     initial_heading = utils.heading_from_deltas(dx, dy)
+    print("[drive_to_point] initial dx={:.2f}, dy={:.2f}, heading={:.2f}".format(dx, dy, initial_heading))
     rotate_to_heading(initial_heading)
 
     # 4) PD setup
@@ -111,45 +113,50 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=4.0)
                 current_x, current_y = robot_pose["x"], robot_pose["y"]
                 last_x, last_y = current_x, current_y
             else:
+                print("[drive_to_point] using last known pose x={:.2f}, y={:.2f}".format(last_x, last_y))
                 current_x, current_y = last_x, last_y
 
             # check arrival
             dx = target_x_cm - current_x
             dy = target_y_cm - current_y
             dist = math.hypot(dx, dy)
+            print("[drive_to_point] dx={:.2f}, dy={:.2f}, dist={:.2f}".format(dx, dy, dist))
             if dist <= dist_thresh_cm:
-                print("[drive_to_point] Arrived within {} cm".format(dist_thresh_cm))
+                print("[drive_to_point] arrived within {} cm".format(dist_thresh_cm))
                 break
 
             # compute heading error
             desired = utils.heading_from_deltas(dx, dy)
             current = hardware.get_heading()
-            # minimal signed error
             error = ((desired - current + 180) % 360) - 180
+            print("[drive_to_point] desired={:.2f}, current={:.2f}, error={:.2f}".format(desired, current, error))
 
             # true PD
             P = config.GYRO_KP * error
             D = config.GYRO_KD * (error - prev_error) / LOOP_DT
             raw_corr = P + D
             prev_error = error
+            print("[drive_to_point] P={:.2f}, D={:.2f}, raw_corr={:.2f}".format(P, D, raw_corr))
 
-            # scale with distance so you don’t over-steer far away
+            # scale and clamp
             steering_gain = min(max(dist / 50.0, 0.3), 1.0)
-            corr = steering_gain * clamp(raw_corr,
-                                         -config.MAX_CORRECTION,
-                                          config.MAX_CORRECTION)
+            corr = steering_gain * clamp(raw_corr, -config.MAX_CORRECTION, config.MAX_CORRECTION)
+            print("[drive_to_point] steering_gain={:.2f}, corr={:.2f}".format(steering_gain, corr))
 
-            # *temporarily* drop LEFT_BIAS (set to 0 in config) so you can tune
-            l_spd = clamp(speed_pct + corr, -100, 100)
-            r_spd = clamp(speed_pct - corr, -100, 100)
+            # apply correction
+            raw_l = speed_pct + corr + config.LEFT_BIAS
+            raw_r = speed_pct - corr + config.RIGHT_BIAS
+            l_spd = clamp(raw_l, -100, 100)
+            r_spd = clamp(raw_r, -100, 100)
+            print("[drive_to_point] l_spd={:.2f}, r_spd={:.2f}".format(l_spd, r_spd))
 
-            hardware.tank.on(SpeedPercent(l_spd),
-                             SpeedPercent(r_spd))
+            hardware.tank.on(SpeedPercent(l_spd), SpeedPercent(r_spd))
             time.sleep(LOOP_DT)
 
     finally:
         hardware.tank.off()
         hardware.aux_motor.off()
+
 
 
 
