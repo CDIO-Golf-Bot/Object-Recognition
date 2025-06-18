@@ -75,76 +75,78 @@ def rotate_to_heading(target_theta_deg, angle_thresh=config.ANGLE_TOLERANCE):
 
 def drive_to_point(target_x_cm, target_y_cm,
                    speed_pct=None,
-                   dist_thresh_cm=7.0):
+                   dist_thresh_cm=7.0,
+                   early_stop_sec=0.5):
     """
     Drive straight toward (target_x_cm, target_y_cm) using only
-    the robot_pose (vision) for both distance and bearing.
-    Heading correction still comes from the gyro.
+    the robot_pose (vision) for distance & bearing.
+    Stops 'early_stop_sec' seconds before the nominal threshold.
     """
     if speed_pct is None:
         speed_pct = config.DRIVE_SPEED_PCT
 
-    # 1) make sure we have a recent pose
+    # make sure we have a recent pose
     age = time.time() - robot_pose.get("timestamp", 0)
     if robot_pose["x"] is None or age > 1.0:
         print("No recent vision—cannot drive.")
         return
 
-    # 2) reset gyro so heading matches ArUco theta
+    # reset gyro to match vision heading
     hardware.gyro.reset()
     time.sleep(0.05)
     hardware.gyro_offset = robot_pose["theta"]
 
-    # 3) face the goal once
+    # face the goal
     dx0 = target_x_cm - robot_pose["x"]
     dy0 = target_y_cm - robot_pose["y"]
     rotate_to_heading(utils.heading_from_deltas(dx0, dy0))
 
-    # 4) PD controller setup
+    # PD setup
     prev_error = 0.0
     LOOP_DT    = 0.01
     alpha      = 0.2
     smoothed   = 0.0
-    max_speed  = (speed_pct/100) * config.MAX_LINEAR_SPEED_CM_S
+
+    # compute how much extra distance to stop early
+    max_speed_cm_s = (speed_pct/100) * config.MAX_LINEAR_SPEED_CM_S
+    extra_dist = early_stop_sec * max_speed_cm_s
 
     hardware.aux_motor.on(config.AUX_FORWARD_PCT)
     try:
         while True:
-            # refresh pose
+            # refresh vision
             age = time.time() - robot_pose["timestamp"]
             if robot_pose["x"] is None or age > 1.0:
-                print("Lost vision during drive—stopping.")
+                print("Lost vision—stopping.")
                 break
-
             cx, cy = robot_pose["x"], robot_pose["y"]
 
-            # 4a) distance check purely on vision pose
+            # pure-vision distance
             dist = math.hypot(target_x_cm - cx,
                               target_y_cm - cy)
-            if dist <= dist_thresh_cm:
-                print("Arrived (dist {:.1f} <= {})".format(dist, dist_thresh_cm))
+            # inflate threshold by the "early-stop" margin
+            tempDist = dist_thresh_cm + extra_dist
+            if dist <= (dist_thresh_cm + extra_dist):
+                print("Arrived early (dist {:.1f} <= {:.1f}).".format(dist, tempDist))
                 break
 
-            # 4b) compute desired bearing from pose
+            # compute heading correction
             desired = utils.heading_from_deltas(
-                        target_x_cm - cx,
-                        target_y_cm - cy)
+                         target_x_cm - cx,
+                         target_y_cm - cy)
             current_h = hardware.get_heading()
             error = ((desired - current_h + 180) % 360) - 180
 
-            # PD terms
             P = config.GYRO_KP * error
             D = config.GYRO_KD * (error - prev_error) / LOOP_DT
             prev_error = error
-
             raw_corr = max(-config.MAX_CORRECTION,
                            min(P + D, config.MAX_CORRECTION))
             smoothed = alpha*raw_corr + (1-alpha)*smoothed
 
-            # 4c) turn + forward
+            # drive
             left_spd  = speed_pct + smoothed + config.LEFT_BIAS
             right_spd = speed_pct - smoothed + config.RIGHT_BIAS
-
             hardware.tank.on(
                 SpeedPercent(max(-100, min(100, left_spd))),
                 SpeedPercent(max(-100, min(100, right_spd)))
@@ -158,17 +160,18 @@ def drive_to_point(target_x_cm, target_y_cm,
 
 # Command handler
 def handle_command(cmd, buf):
-
     if 'distance' in cmd:
         buf['distance_buffer'] = buf.get('distance_buffer', 0) + float(cmd['distance'])
+
+    # if we're GOTO + DELIVER in one, drive early-stop then deliver
+    if 'goto' in cmd:
+        x, y = cmd['goto']
+        early = 1.0 if cmd.get('deliver') else 0.0
+        drive_to_point(x, y, early_stop_sec=early)
 
     if cmd.get('deliver'):
         rotate_to_heading(0.0)
         _reverse_aux()
-
-    if 'goto' in cmd:
-        x, y = cmd['goto']
-        drive_to_point(x, y)
 
     if 'face' in cmd:
         rotate_to_heading(float(cmd['face']))
