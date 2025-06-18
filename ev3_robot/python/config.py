@@ -10,11 +10,11 @@ CELL_SIZE_CM    = 2.0
 # ————————————————————————
 # GYRO PID
 # ————————————————————————
-GYRO_KP         = 3.0
+GYRO_KP         = 6.0
 GYRO_KI         = 0.0003
-GYRO_KD         = 4.0
-MAX_CORRECTION  = 12.0
-ANGLE_TOLERANCE = 5.0
+GYRO_KD         = 8.0
+MAX_CORRECTION  = 25.0
+ANGLE_TOLERANCE = 2.0
 LEFT_BIAS       = 0.0
 RIGHT_BIAS      = 0.0
 
