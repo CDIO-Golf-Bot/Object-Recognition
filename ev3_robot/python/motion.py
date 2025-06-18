@@ -139,13 +139,14 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
             print("[drive_to_point] P={:.2f}, D={:.2f}, raw_corr={:.2f}".format(P, D, raw_corr))
 
             # scale and clamp
-            steering_gain = min(max(dist / 50.0, 0.3), 1.0)
+            steering_gain = min(dist / 50.0, 1.0)
             corr = steering_gain * clamp(raw_corr, -config.MAX_CORRECTION, config.MAX_CORRECTION)
             print("[drive_to_point] steering_gain={:.2f}, corr={:.2f}".format(steering_gain, corr))
 
             # apply correction
-            raw_l = speed_pct + corr + config.LEFT_BIAS
-            raw_r = speed_pct - corr + config.RIGHT_BIAS
+            FEED_FORWARD = config.FEED_FORWARD  # e.g. 2.0 percent
+            raw_l = speed_pct + corr + config.LEFT_BIAS + FEED_FORWARD
+            raw_r = speed_pct - corr + config.RIGHT_BIAS - FEED_FORWARD
             l_spd = clamp(raw_l, -100, 100)
             r_spd = clamp(raw_r, -100, 100)
             print("[drive_to_point] l_spd={:.2f}, r_spd={:.2f}".format(l_spd, r_spd))

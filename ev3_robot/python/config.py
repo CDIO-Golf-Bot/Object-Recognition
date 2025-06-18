@@ -23,7 +23,7 @@ RIGHT_BIAS      = 0.0
 # ————————————————————————
 TURN_SPEED_PCT  = 30
 DRIVE_SPEED_PCT = 35
-
+FEED_FORWARD    = 2.0
 # ————————————————————————
 # AUX MOTOR
 # ————————————————————————
