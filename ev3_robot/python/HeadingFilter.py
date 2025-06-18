@@ -14,7 +14,7 @@ class HeadingFilter:
         # Initialize both to your current best heading:
         self.angle = hardware.get_heading()  # (negated+offset gyro)
         # track the raw gyro angle to compute deltas
-        self._last_raw = (-gyro.angle) % 360
+        self._last_raw = (-hardware.gyro.angle) % 360
         self._last_time = time.time()
 
     def update(self):
@@ -23,7 +23,7 @@ class HeadingFilter:
         self._last_time = now
 
         # 1) Fast prediction: integrate gyro delta
-        raw = (-gyro.angle) % 360
+        raw = (-hardware.gyro.angle) % 360
         # shortest‐path difference (–180…+180)
         dθ  = ((raw - self._last_raw + 180) % 360) - 180
         self._last_raw = raw

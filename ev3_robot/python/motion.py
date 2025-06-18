@@ -8,8 +8,8 @@ import hardware
 import utils
 from HeadingFilter import HeadingFilter
 
-# choose your blend: e.g. 90% gyro, 10% ArUco
-heading_filter = HeadingFilter(alpha=0.9)
+# choose your blend: e.g. 70% gyro, 30% ArUco
+heading_filter = HeadingFilter(alpha=0.7)
 
 # Attempt to initialize Ultrasonic Sensor (port from config)
 try:
@@ -98,7 +98,7 @@ def drive_to_point(target_x_cm, target_y_cm,
                    early_stop_sec=0.5):
     """
     Drive straight toward (target_x_cm, target_y_cm) using only
-    the robot_pose (vision) for distance & bearing.
+    the robot_pose (vision) for distance & bearing, fused with gyro.
     Stops 'early_stop_sec' seconds before the nominal threshold.
     """
     if speed_pct is None:
@@ -110,12 +110,12 @@ def drive_to_point(target_x_cm, target_y_cm,
         print("No recent vision—cannot drive.")
         return
 
-    # reset gyro to match vision heading
-    hardware.gyro.reset()
-    time.sleep(0.05)
-    hardware.gyro_offset = robot_pose["theta"]
+    # [–] Resetting gyro by hand now handled inside the HeadingFilter
+    # hardware.gyro.reset()
+    # time.sleep(0.05)
+    # hardware.gyro_offset = robot_pose["theta"]
 
-    # face the goal
+    # face the goal once
     dx0 = target_x_cm - robot_pose["x"]
     dy0 = target_y_cm - robot_pose["y"]
     rotate_to_heading(utils.heading_from_deltas(dx0, dy0))
@@ -123,8 +123,6 @@ def drive_to_point(target_x_cm, target_y_cm,
     # PD setup
     prev_error = 0.0
     LOOP_DT    = 0.01
-    alpha      = 0.2
-    smoothed   = 0.0
 
     # compute how much extra distance to stop early
     max_speed_cm_s = (speed_pct/100) * config.MAX_LINEAR_SPEED_CM_S
@@ -133,18 +131,15 @@ def drive_to_point(target_x_cm, target_y_cm,
     hardware.aux_motor.on(config.AUX_FORWARD_PCT)
     try:
         while True:
-            # refresh vision; if it’s stale, try to reacquire instead of quitting
+            # refresh vision; if it’s stale, try to reacquire tag
             age = time.time() - robot_pose["timestamp"]
             if robot_pose["x"] is None or age > VISION_TIMEOUT_S:
-                print("Vision stal etrying to reacquire tag..")
-                hardware.tank.off()   # pause movement
-
+                print("Vision stale trying to reacquire tag")
+                hardware.tank.off()
                 if not wait_for_tag():
-                    print("Tag not found—aborting drive.")
+                    print("Tag not foundaborting drive.")
                     break
-
-                print("Tag reacquired resuming drive.")
-                # re-aim at goal before moving on
+                print("Tag reacquiredresuming drive.")
                 cx, cy = robot_pose["x"], robot_pose["y"]
                 rotate_to_heading(utils.heading_from_deltas(
                     target_x_cm - cx,
@@ -157,38 +152,46 @@ def drive_to_point(target_x_cm, target_y_cm,
             # pure-vision distance
             dist = math.hypot(target_x_cm - cx,
                               target_y_cm - cy)
-            # inflate threshold by the "early-stop" margin
-            tempDist = dist_thresh_cm + extra_dist
+            tempDist = dist_thresh_cm+extra_dist
             if dist <= (dist_thresh_cm + extra_dist):
                 print("Arrived early (dist {:.1f} <= {:.1f}).".format(dist, tempDist))
                 break
 
-            # compute heading correction
-            desired = utils.heading_from_deltas(
-                         target_x_cm - cx,
-                         target_y_cm - cy)
-            current_h = hardware.get_heading()
+            # ––––––– HEADINGS AND CORRECTION –––––––
+            # [+] get our fused heading (gyro + ArUco)
+            current_h = heading_filter.update()
+
+            # compute target bearing
+            desired = math.degrees(math.atan2(dy0 := (target_x_cm - cx),
+                                             dx0 := (target_y_cm - cy))) % 360
             error = ((desired - current_h + 180) % 360) - 180
 
             P = config.GYRO_KP * error
             D = config.GYRO_KD * (error - prev_error) / LOOP_DT
             prev_error = error
+
             raw_corr = max(-config.MAX_CORRECTION,
                            min(P + D, config.MAX_CORRECTION))
-            smoothed = alpha*raw_corr + (1-alpha)*smoothed
 
-            # drive
-            left_spd  = speed_pct + smoothed + config.LEFT_BIAS
-            right_spd = speed_pct - smoothed + config.RIGHT_BIAS
+            # ––––––– WHEEL MIXING –––––––
+            # [+] apply same “–corr/+corr” mapping so +corr → CCW turn
+            left_spd  = speed_pct - raw_corr + config.LEFT_BIAS
+            right_spd = speed_pct + raw_corr + config.RIGHT_BIAS
+
+            # clamp & drive
+            left_spd  = max(-100, min(100, left_spd))
+            right_spd = max(-100, min(100, right_spd))
             hardware.tank.on(
-                SpeedPercent(max(-100, min(100, left_spd))),
-                SpeedPercent(max(-100, min(100, right_spd)))
+                SpeedPercent(left_spd),
+                SpeedPercent(right_spd)
             )
 
             time.sleep(LOOP_DT)
 
     finally:
         hardware.tank.off()
+        _stop_aux()
+
 
 
 # Command handler
