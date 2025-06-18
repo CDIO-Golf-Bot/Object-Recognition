@@ -30,3 +30,12 @@ FEED_FORWARD    = 2.0
 AUX_FORWARD_PCT = 25
 AUX_REVERSE_PCT = -25
 AUX_REVERSE_SEC = 5.0
+
+# Number of encoder ticks per full wheel revolution
+TICKS_PER_REV = 360  # or whatever your hardware uses
+
+# Maximum linear speed of the robot in cm/s at 100% motor power
+default_MAX_LINEAR_SPEED_CM_S = 20.0  # calibrate me!
+
+TICKS_PER_REV = 360        # your motor’s encoder ticks per wheel rev
+MAX_LINEAR_SPEED_CM_S = 20 # calibrate: robot speed in cm/s at 100%

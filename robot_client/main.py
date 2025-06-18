@@ -39,7 +39,7 @@ def main():
     # Thread: YOLO inference + annotation
     inference_thread = threading.Thread(
         target=process_frames,
-        args=(capture_queue, display_queue, stop_event),
+        args=(capture_queue, display_queue, stop_event),    
         name="InferenceThread",
         daemon=True
     )
