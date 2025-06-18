@@ -46,7 +46,7 @@ def _reverse_aux():
     )
 
 VISION_TIMEOUT_S = 1.5     # how stale before we try to reacquire
-REACQUIRE_TIMEOUT_S = 6.0  # how long to spin & wait for a new tag
+REACQUIRE_TIMEOUT_S = 5.0  # how long to spin & wait for a new tag
 
 def wait_for_tag(timeout=REACQUIRE_TIMEOUT_S):
     """Block until robot_pose is updated within VISION_TIMEOUT_S, or timeout."""
@@ -56,10 +56,7 @@ def wait_for_tag(timeout=REACQUIRE_TIMEOUT_S):
         if robot_pose["x"] is not None and age <= VISION_TIMEOUT_S:
             return True
         time.sleep(0.05)
-    # here we timed out
-    print("Tag reacquire timed out after {0:.1f} seconds".format(timeout))
     return False
-
 
 # Heading fusion
 def rotate_to_heading(target_theta_deg, angle_thresh=config.ANGLE_TOLERANCE):
@@ -115,7 +112,7 @@ def drive_to_point(target_x_cm, target_y_cm,
     time.sleep(0.05)
     hardware.gyro_offset = robot_pose["theta"]
 
-    # face the goal initially
+    # face the goal
     dx0 = target_x_cm - robot_pose["x"]
     dy0 = target_y_cm - robot_pose["y"]
     rotate_to_heading(utils.heading_from_deltas(dx0, dy0))
@@ -123,6 +120,7 @@ def drive_to_point(target_x_cm, target_y_cm,
     # PD setup
     prev_error = 0.0
     LOOP_DT    = 0.01
+    alpha      = 0.2
     smoothed   = 0.0
 
     # compute how much extra distance to stop early
@@ -132,14 +130,17 @@ def drive_to_point(target_x_cm, target_y_cm,
     hardware.aux_motor.on(config.AUX_FORWARD_PCT)
     try:
         while True:
-            # refresh vision; if stale, try to reacquire
+            # refresh vision; if it’s stale, try to reacquire instead of quitting
             age = time.time() - robot_pose["timestamp"]
             if robot_pose["x"] is None or age > VISION_TIMEOUT_S:
-                print("Vision stale—trying to reacquire tag…")
-                hardware.tank.off()
+                print("Vision stal etrying to reacquire tag..")
+                hardware.tank.off()   # pause movement
+
                 if not wait_for_tag():
                     print("Tag not found—aborting drive.")
                     break
+
+                print("Tag reacquired resuming drive.")
                 # re-aim at goal before moving on
                 cx, cy = robot_pose["x"], robot_pose["y"]
                 rotate_to_heading(utils.heading_from_deltas(
@@ -147,47 +148,31 @@ def drive_to_point(target_x_cm, target_y_cm,
                     target_y_cm - cy))
                 continue
 
-            # fresh vision
+            # now vision is fresh
             cx, cy = robot_pose["x"], robot_pose["y"]
+
+            # pure-vision distance
             dist = math.hypot(target_x_cm - cx,
                               target_y_cm - cy)
-            if dist <= dist_thresh_cm + extra_dist:
-                #print("Arrived early (dist {:.1f} <= {dist_thresh_cm + extra_dist:.1f}).".format(dist, ))
+            # inflate threshold by the "early-stop" margin
+            tempDist = dist_thresh_cm + extra_dist
+            if dist <= (dist_thresh_cm + extra_dist):
+                print("Arrived early (dist {:.1f} <= {:.1f}).".format(dist, tempDist))
                 break
 
-            # — compute heading correction —
-            desired   = utils.heading_from_deltas(
-                          target_x_cm - cx,
-                          target_y_cm - cy)
+            # compute heading correction
+            desired = utils.heading_from_deltas(
+                         target_x_cm - cx,
+                         target_y_cm - cy)
             current_h = hardware.get_heading()
-            error     = ((desired - current_h + 180) % 360) - 180
+            error = ((desired - current_h + 180) % 360) - 180
 
-            # 1) DEADZONE
-            deadzone_deg = 2.0
-            if abs(error) < deadzone_deg:
-                raw_corr = 0.0
-            else:
-                # 2) PID
-                P = config.GYRO_KP * error
-                D = config.GYRO_KD * (error - prev_error) / LOOP_DT
-                unclipped = P + D
-
-                # nonlinear scaling: gentle near zero, full at large
-                scale = min(1.0, abs(error) / 30.0)
-                raw_corr = math.copysign(
-                    abs(unclipped) ** (0.5 + 0.5*scale),
-                    unclipped
-                )
-
-                # 3) CLIP
-                raw_corr = max(-config.MAX_CORRECTION,
-                               min(config.MAX_CORRECTION, raw_corr))
-
-            # 4) DYNAMIC SMOOTHING
-            alpha_small = 0.1
-            alpha_big   = 0.5
-            alpha       = alpha_small if abs(raw_corr) < 10 else alpha_big
-            smoothed    = alpha * raw_corr + (1 - alpha) * smoothed
+            P = config.GYRO_KP * error
+            D = config.GYRO_KD * (error - prev_error) / LOOP_DT
+            prev_error = error
+            raw_corr = max(-config.MAX_CORRECTION,
+                           min(P + D, config.MAX_CORRECTION))
+            smoothed = alpha*raw_corr + (1-alpha)*smoothed
 
             # drive
             left_spd  = speed_pct + smoothed + config.LEFT_BIAS
@@ -197,8 +182,6 @@ def drive_to_point(target_x_cm, target_y_cm,
                 SpeedPercent(max(-100, min(100, right_spd)))
             )
 
-            # prepare for next loop
-            prev_error = error
             time.sleep(LOOP_DT)
 
     finally:
