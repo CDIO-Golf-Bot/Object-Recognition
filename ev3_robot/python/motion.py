@@ -38,9 +38,25 @@ def _stop_aux():
 
 
 def _reverse_aux():
-    hardware.aux_motor.on(config.AUX_REVERSE_PCT)
-    time.sleep(config.AUX_REVERSE_SEC)
-    hardware.aux_motor.off()
+    # spin aux motor in reverse for AUX_REVERSE_SEC seconds, without blocking
+    hardware.aux_motor.on_for_seconds(
+        SpeedPercent(config.AUX_REVERSE_PCT),
+        config.AUX_REVERSE_SEC,
+        block=False   # <—— returns immediately
+    )
+
+VISION_TIMEOUT_S = 1.5     # how stale before we try to reacquire
+REACQUIRE_TIMEOUT_S = 5.0  # how long to spin & wait for a new tag
+
+def wait_for_tag(timeout=REACQUIRE_TIMEOUT_S):
+    """Block until robot_pose is updated within VISION_TIMEOUT_S, or timeout."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        age = time.time() - robot_pose.get("timestamp", 0)
+        if robot_pose["x"] is not None and age <= VISION_TIMEOUT_S:
+            return True
+        time.sleep(0.05)
+    return False
 
 # Heading fusion
 def rotate_to_heading(target_theta_deg, angle_thresh=config.ANGLE_TOLERANCE):
@@ -114,11 +130,25 @@ def drive_to_point(target_x_cm, target_y_cm,
     hardware.aux_motor.on(config.AUX_FORWARD_PCT)
     try:
         while True:
-            # refresh vision
+            # refresh vision; if it’s stale, try to reacquire instead of quitting
             age = time.time() - robot_pose["timestamp"]
-            if robot_pose["x"] is None or age > 1.0:
-                print("Lost vision—stopping.")
-                break
+            if robot_pose["x"] is None or age > VISION_TIMEOUT_S:
+                print("Vision stal etrying to reacquire tag..")
+                hardware.tank.off()   # pause movement
+
+                if not wait_for_tag():
+                    print("Tag not found—aborting drive.")
+                    break
+
+                print("Tag reacquired resuming drive.")
+                # re-aim at goal before moving on
+                cx, cy = robot_pose["x"], robot_pose["y"]
+                rotate_to_heading(utils.heading_from_deltas(
+                    target_x_cm - cx,
+                    target_y_cm - cy))
+                continue
+
+            # now vision is fresh
             cx, cy = robot_pose["x"], robot_pose["y"]
 
             # pure-vision distance
