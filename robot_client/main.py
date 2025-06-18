@@ -1,5 +1,6 @@
 # main.py
 # Entry point: wires capture, inference (ArUco+YOLO), and display threads
+# Setup project on pc: pip install -e .
 
 import threading
 import cv2

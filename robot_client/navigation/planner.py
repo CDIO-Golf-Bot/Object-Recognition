@@ -105,6 +105,7 @@ def pick_top_n(balls, n=None):
         gx, gy = gu.cm_to_grid_coords(b[0], b[1])
         return abs(sx - gx) + abs(sy - gy)
     return sorted(balls, key=dist)[:n]
+    
 
 
 def get_expanded_obstacles(raw):
@@ -138,6 +139,9 @@ def compute_best_route(balls_list, goal_name):
     # 2️⃣ No balls detected: nothing to do
     if not balls_list:
         return [], []
+    
+    # Limit top N balls to MAX_BALLS_TO_COLLECT
+    balls_list = pick_top_n(balls_list)
 
     # 3️⃣ Use only the ArUco-derived starting position
     start_cm = robot_position_cm
