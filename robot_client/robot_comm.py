@@ -1,8 +1,10 @@
 import socket
 import json
+import time
 
 from robot_client.config import ROBOT_HEADING
 from robot_client.navigation.planner import compress_path
+from robot_client.config import ROBOT_IP, ROBOT_PORT
 
 robot_sock = None
 
@@ -48,6 +50,8 @@ def send_pose(x_cm, y_cm, theta_deg) -> bool:
     Send a one-off pose update to the robot via send_cmd().
     Returns True on success, False on failure.
     """
+    if robot_sock is None:
+        return False
     pose_msg = {
         "pose": {
             "x": float(round(x_cm, 2)),
@@ -172,3 +176,14 @@ def send_face(theta_deg: float):
             print(f"📡 Sent face (retry) → θ={theta_deg:.1f}°")
         else:
             print("❌ face retry also failed.")
+
+
+def connection_manager(interval: float, stop_event):
+    """
+    Runs in its own thread.  Every `interval` seconds,
+    if we're not connected, try to init_robot_connection().
+    """
+    while not stop_event.is_set():
+        if robot_sock is None:
+            init_robot_connection(ROBOT_IP, ROBOT_PORT)
+        time.sleep(interval)
