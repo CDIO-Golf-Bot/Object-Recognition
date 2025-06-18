@@ -67,7 +67,6 @@ def rotate_to_heading(target_theta_deg, angle_thresh=config.ANGLE_TOLERANCE):
             time.sleep(0.01)
     finally:
         hardware.tank.off()
-        _stop_aux()
 
 
 
@@ -91,6 +90,7 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
     current_x, current_y = robot_pose["x"], robot_pose["y"]
     print("[drive_to_point] start at x={:.2f}, y={:.2f}".format(current_x, current_y))
 
+    hardware.aux_motor.on(config.AUX_FORWARD_PCT)
     # 3) face the goal once
     dx = target_x_cm - current_x
     dy = target_y_cm - current_y
@@ -109,8 +109,6 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
     # keep track of last known good pose
     last_x, last_y = current_x, current_y
     last_x, last_y = current_x, current_y
-
-    hardware.aux_motor.on(config.AUX_FORWARD_PCT)
     try:
         while True:
             # 0) wait for fresh vision
@@ -160,7 +158,6 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
 
     finally:
         hardware.tank.off()
-        hardware.aux_motor.off()
 
 
 
