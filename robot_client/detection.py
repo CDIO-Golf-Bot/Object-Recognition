@@ -20,6 +20,16 @@ ball_positions_cm = []
 obstacles = set()
 class_colors = {}
 
+def pixel_to_cm(px, py):
+    if client_config.inv_homography_matrix is None:
+        return None
+    pt = np.array([[[px, py]]], dtype="float32")
+    real_pt = cv2.perspectiveTransform(pt, client_config.inv_homography_matrix)[0][0]
+    return real_pt[0], real_pt[1]
+
+def cm_to_grid_coords(x_cm, y_cm):
+    return int(x_cm // client_config.GRID_SPACING_CM), int(y_cm // client_config.GRID_SPACING_CM)
+
 
 def process_frames(frame_queue, output_queue, stop_event):
     global ball_positions_cm, obstacles
@@ -100,6 +110,46 @@ def process_frames(frame_queue, output_queue, stop_event):
         # — Draw grid and route —
         frame_grid  = navigation.draw_metric_grid(original)
         frame_route = navigation.draw_full_route(frame_grid, ball_positions_cm)
+
+        if client_config.homography_matrix is not None:
+            hsv = cv2.cvtColor(original, cv2.COLOR_BGR2HSV)
+            mask1 = cv2.inRange(hsv, np.array([0,120,70]),  np.array([10,255,255]))
+            mask2 = cv2.inRange(hsv, np.array([170,120,70]),np.array([180,255,255]))
+            red_mask = cv2.bitwise_or(mask1, mask2)
+            kernel   = cv2.getStructuringElement(cv2.MORPH_RECT, (5,5))
+            red_mask = cv2.morphologyEx(red_mask, cv2.MORPH_CLOSE, kernel)
+            red_mask = cv2.morphologyEx(red_mask, cv2.MORPH_OPEN,  kernel)
+            contours, _ = cv2.findContours(red_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+            best_cnt, best_area = None, 0
+            px_per_x = original.shape[1] / client_config.REAL_WIDTH_CM
+            px_per_y = original.shape[0] / client_config.REAL_HEIGHT_CM
+
+            for cnt in contours:
+                area_px = cv2.contourArea(cnt)
+                if area_px < client_config.MIN_RED_AREA_PX:
+                    continue
+                x_r, y_r, w_r, h_r = cv2.boundingRect(cnt)
+                area_cm = (w_r / px_per_x) * (h_r / px_per_y)
+                if area_cm > client_config.MAX_RED_AREA_CM2:
+                    continue
+                if area_px > best_area:
+                    best_cnt, best_area = cnt, area_px
+
+            new_cross_obs = set()
+            if best_cnt is not None:
+                bx, by, bw_cnt, bh_cnt = cv2.boundingRect(best_cnt)
+                for sx in range(bx, bx + bw_cnt, 10):
+                    for sy in range(by, by + bh_cnt, 10):
+                        if cv2.pointPolygonTest(best_cnt, (sx, sy), False) >= 0:
+                            real = pixel_to_cm(sx, sy)
+                            if not real:
+                                continue
+                            gx, gy = cm_to_grid_coords(real[0], real[1])
+                            if (0 <= gx < client_config.REAL_WIDTH_CM // client_config.GRID_SPACING_CM and
+                                0 <= gy < client_config.REAL_HEIGHT_CM // client_config.GRID_SPACING_CM):
+                                new_cross_obs.add((gx, gy))
+            obstacles |= new_cross_obs
 
         # Push (processed_frame, original_timestamp) for display
         try:
