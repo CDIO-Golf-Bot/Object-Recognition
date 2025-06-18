@@ -73,112 +73,87 @@ def rotate_to_heading(target_theta_deg, angle_thresh=config.ANGLE_TOLERANCE):
         hardware.tank.off()
 
 
-
-
-def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0):
+def drive_to_point(target_x_cm, target_y_cm,
+                   speed_pct=None,
+                   dist_thresh_cm=7.0):
+    """
+    Drive straight toward (target_x_cm, target_y_cm) using only
+    the robot_pose (vision) for both distance and bearing.
+    Heading correction still comes from the gyro.
+    """
     if speed_pct is None:
         speed_pct = config.DRIVE_SPEED_PCT
 
-    # 1) one-time gyro reset
-    if robot_pose["theta"] is None:
-        print("No ArUco heading—cannot drive."); return
+    # 1) make sure we have a recent pose
+    age = time.time() - robot_pose.get("timestamp", 0)
+    if robot_pose["x"] is None or age > 1.0:
+        print("No recent vision—cannot drive.")
+        return
+
+    # 2) reset gyro so heading matches ArUco theta
     hardware.gyro.reset()
     time.sleep(0.05)
     hardware.gyro_offset = robot_pose["theta"]
 
-    # 2) initial vision fix
-    if robot_pose["x"] is None or (time.time() - robot_pose["timestamp"]) > 1.0:
-        print("No recent vision—cannot drive."); return
-    current_x, current_y = robot_pose["x"], robot_pose["y"]
+    # 3) face the goal once
+    dx0 = target_x_cm - robot_pose["x"]
+    dy0 = target_y_cm - robot_pose["y"]
+    rotate_to_heading(utils.heading_from_deltas(dx0, dy0))
 
-    # 3) face the goal
-    dx, dy = target_x_cm - current_x, target_y_cm - current_y
-    rotate_to_heading(utils.heading_from_deltas(dx, dy))
-
-    # controller & motion setup
-    prev_error    = 0.0
-    smoothed_corr = 0.0
-    LOOP_DT       = 0.01
-    alpha         = 0.2
-    max_speed_cm_s= (config.DRIVE_SPEED_PCT/100)*config.MAX_LINEAR_SPEED_CM_S
-
-    # odometry state
-    last_tick_l = hardware.tank.left_motor.position
-    last_tick_r = hardware.tank.right_motor.position
-
-    prev_l_spd = prev_r_spd = speed_pct
-    SLEW_LIMIT = 5.0
-
-    def clamp(v, lo, hi): return max(lo, min(v, hi))
-    def slew(n, o, lim):
-        d = n - o
-        if   d >  lim: return o + lim
-        if   d < -lim: return o - lim
-        return n
+    # 4) PD controller setup
+    prev_error = 0.0
+    LOOP_DT    = 0.01
+    alpha      = 0.2
+    smoothed   = 0.0
+    max_speed  = (speed_pct/100) * config.MAX_LINEAR_SPEED_CM_S
 
     hardware.aux_motor.on(config.AUX_FORWARD_PCT)
-
     try:
         while True:
-            # 0) dead-reckon from encoders
-            new_l = hardware.tank.left_motor.position
-            new_r = hardware.tank.right_motor.position
-            d_l = new_l - last_tick_l; d_r = new_r - last_tick_r
-            last_tick_l, last_tick_r = new_l, new_r
-            dcm_l = d_l * config.WHEEL_CIRC_CM / config.TICKS_PER_REV
-            dcm_r = d_r * config.WHEEL_CIRC_CM / config.TICKS_PER_REV
-            dcenter = (dcm_l + dcm_r)/2
-            θ = math.radians(hardware.get_heading())
-            current_x += dcenter * math.cos(θ)
-            current_y += dcenter * math.sin(θ)
-
-            # 1) vision fuse if fresh
+            # refresh pose
             age = time.time() - robot_pose["timestamp"]
-            if age < 0.5:
-                # simple override: take vision pose
-                current_x, current_y = robot_pose["x"], robot_pose["y"]
-
-            # 2) stopping check (no waiting!)
-            dist = math.hypot(target_x_cm - current_x,
-                              target_y_cm - current_y)
-            # inflate for lag:
-            effective_thresh = dist_thresh_cm + max_speed_cm_s * age
-            if dist <= effective_thresh:
-                print("Arrived (dist {:.1f} <= {:.1f})".format(dist, effective_thresh))
+            if robot_pose["x"] is None or age > 1.0:
+                print("Lost vision during drive—stopping.")
                 break
 
-            # 3) PD on heading
+            cx, cy = robot_pose["x"], robot_pose["y"]
+
+            # 4a) distance check purely on vision pose
+            dist = math.hypot(target_x_cm - cx,
+                              target_y_cm - cy)
+            if dist <= dist_thresh_cm:
+                print("Arrived (dist {:.1f} <= {})".format(dist, dist_thresh_cm))
+                break
+
+            # 4b) compute desired bearing from pose
             desired = utils.heading_from_deltas(
-                        target_x_cm - current_x,
-                        target_y_cm - current_y)
-            curr_h = hardware.get_heading()
-            error = ((desired - curr_h + 180) % 360) - 180
+                        target_x_cm - cx,
+                        target_y_cm - cy)
+            current_h = hardware.get_heading()
+            error = ((desired - current_h + 180) % 360) - 180
+
+            # PD terms
             P = config.GYRO_KP * error
             D = config.GYRO_KD * (error - prev_error) / LOOP_DT
             prev_error = error
-            raw_corr = clamp(P + D, -config.MAX_CORRECTION, config.MAX_CORRECTION)
-            smoothed_corr = alpha*raw_corr + (1-alpha)*smoothed_corr
-            corr = smoothed_corr
 
-            # 4) compute & slew-limit speeds
-            raw_l = speed_pct + corr + config.LEFT_BIAS + config.FEED_FORWARD
-            raw_r = speed_pct - corr + config.RIGHT_BIAS - config.FEED_FORWARD
-            l_spd = clamp(raw_l, -100, 100)
-            r_spd = clamp(raw_r, -100, 100)
+            raw_corr = max(-config.MAX_CORRECTION,
+                           min(P + D, config.MAX_CORRECTION))
+            smoothed = alpha*raw_corr + (1-alpha)*smoothed
 
-            l_spd = slew(l_spd, prev_l_spd, SLEW_LIMIT)
-            r_spd = slew(r_spd, prev_r_spd, SLEW_LIMIT)
-            prev_l_spd, prev_r_spd = l_spd, r_spd
+            # 4c) turn + forward
+            left_spd  = speed_pct + smoothed + config.LEFT_BIAS
+            right_spd = speed_pct - smoothed + config.RIGHT_BIAS
 
-            hardware.tank.on(SpeedPercent(l_spd),
-                             SpeedPercent(r_spd))
+            hardware.tank.on(
+                SpeedPercent(max(-100, min(100, left_spd))),
+                SpeedPercent(max(-100, min(100, right_spd)))
+            )
+
             time.sleep(LOOP_DT)
 
     finally:
         hardware.tank.off()
-
-
-
 
 
 # Command handler
