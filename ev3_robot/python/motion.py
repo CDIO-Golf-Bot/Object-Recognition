@@ -8,9 +8,6 @@ import hardware
 import utils
 from HeadingFilter import HeadingFilter
 
-# choose your blend: e.g. 70% gyro, 30% ArUco
-heading_filter = HeadingFilter(alpha=0.7)
-
 # Attempt to initialize Ultrasonic Sensor (port from config)
 try:
     from ev3dev2.sensor.lego import UltrasonicSensor
@@ -61,6 +58,15 @@ def wait_for_tag(timeout=REACQUIRE_TIMEOUT_S):
         time.sleep(0.05)
     return False
 
+if wait_for_tag():
+    # align the hardware gyro’s zero/offset to the current tag heading
+    hardware.calibrate_gyro_aruco(robot_pose["theta"])
+    # now build the filter around that freshly zeroed gyro
+    heading_filter = HeadingFilter(alpha=0.9,
+                                   vision_init=robot_pose["theta"])
+else:
+    raise RuntimeError("Could not see any ArUco tag at startup!")
+
 # Heading fusion
 def rotate_to_heading(target_theta_deg, angle_thresh=config.ANGLE_TOLERANCE):
     """
@@ -71,7 +77,7 @@ def rotate_to_heading(target_theta_deg, angle_thresh=config.ANGLE_TOLERANCE):
     min_power = 20        # minimum turn power (%)
     try:
         while True:
-            current = hardware.get_heading()
+            current = heading_filter.update()
             error = utils.heading_error(target_theta_deg, current)
 
             # stop when within tolerance
@@ -203,6 +209,16 @@ def handle_command(cmd, buf):
     if 'goto' in cmd:
         x, y = cmd['goto']
         early = 1.0 if cmd.get('deliver') else 0.0
+
+        # ─── Recalibrate gyro to ArUco before each drive ───
+        print("Reacquiring tag and recalibrating gyro...")
+        if wait_for_tag(timeout=0.5):
+            hardware.calibrate_gyro_aruco(robot_pose["theta"])
+            heading_filter.reset(robot_pose["theta"])
+            print("Calibrated zero to {:.1f} degrees".format(robot_pose["theta"]))
+        else:
+            print("Warning: could not reacquire tag using existing calibration")
+
         drive_to_point(x, y, early_stop_sec=early)
 
     if cmd.get('deliver'):

@@ -4,19 +4,28 @@ import hardware
 from motion import robot_pose
 
 class HeadingFilter:
-    def __init__(self, alpha=0.9):
-        """
-        alpha: how much to trust the gyro prediction vs. the ArUco measurement.
-        0.0 = pure ArUco (slow, no drift)
-        1.0 = pure gyro   (fast, drifts)
-        """
+    def __init__(self, alpha=0.9, vision_init=None):
         self.alpha = alpha
-        # Initialize both to your current best heading:
-        self.angle = hardware.get_heading()  # (negated+offset gyro)
-        # track the raw gyro angle to compute deltas
-        self._last_raw = (-hardware.gyro.angle) % 360
+
+        # if the caller gives us an initial vision heading, use it…
+        if vision_init is not None:
+            hardware.gyro.reset()
+            time.sleep(0.05)
+            hardware.gyro_offset = vision_init
+            # and force both our filter state
+            self.angle     = vision_init
+            self._last_raw = (-hardware.gyro.angle) % 360
+        else:
+            # fall back to whatever the current fused gyro says
+            self.angle     = hardware.get_heading()
+            self._last_raw = (-hardware.gyro.angle) % 360
+
         self._last_time = time.time()
 
+    def reset(self, vision_init):
+        """Hard-reset the filter to a new ArUco zero."""
+        self._init_state(vision_init)
+    
     def update(self):
         now = time.time()
         dt  = now - self._last_time
