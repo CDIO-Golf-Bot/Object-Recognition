@@ -60,9 +60,14 @@ MIN_RED_AREA_PX      = 500
 MAX_RED_AREA_CM2     = 400
 
 IGNORED_AREA = {
-    'x_min': 50, 'x_max': 100,
-    'y_min': 50, 'y_max': 100
+    'x_min': 0, 'x_max': 0,
+    'y_min': 0, 'y_max': 0
 }
+homography_matrix     = None
+inv_homography_matrix = None
+
+MIN_RED_AREA_PX      = 500
+MAX_RED_AREA_CM2     = 400
 
 # === Robot Config ===
 ROBOT_IP      = "10.137.48.57"
