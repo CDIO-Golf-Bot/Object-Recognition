@@ -102,6 +102,9 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
     prev_error = 0.0
     LOOP_DT    = 0.01
     STALE_LIMIT = 1.0  # seconds to wait for fresh vision
+    alpha = 0.2          # smoothing factor, 0<α<1
+    smoothed_corr = 0.0  # initialize
+
 
     def clamp(v, lo, hi):
         return lo if v < lo else hi if v > hi else v
@@ -144,11 +147,13 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
             D = config.GYRO_KD * (error - prev_error) / LOOP_DT
             prev_error = error
             raw_corr = clamp(P + D, -config.MAX_CORRECTION, config.MAX_CORRECTION)
-            print("[drive_to_point] P={:.2f}, D={:.2f}, corr={:.2f}".format(P, D, raw_corr))
+            smoothed_corr = alpha * raw_corr + (1 - alpha) * smoothed_corr
+            corr = smoothed_corr
+            print("[drive_to_point] P={:.2f}, D={:.2f}, corr={:.2f}".format(P, D, corr))
 
             # apply correction + bias + feed-forward
-            raw_l = speed_pct + raw_corr + config.LEFT_BIAS + config.FEED_FORWARD
-            raw_r = speed_pct - raw_corr + config.RIGHT_BIAS - config.FEED_FORWARD
+            raw_l = speed_pct + corr + config.LEFT_BIAS + config.FEED_FORWARD
+            raw_r = speed_pct - corr + config.RIGHT_BIAS - config.FEED_FORWARD
             l_spd = clamp(raw_l, -100, 100)
             r_spd = clamp(raw_r, -100, 100)
             print("[drive_to_point] l_spd={:.2f}, r_spd={:.2f}".format(l_spd, r_spd))
