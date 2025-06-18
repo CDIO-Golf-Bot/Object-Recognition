@@ -64,8 +64,6 @@ def process_frames(frame_queue, output_queue, stop_event):
                 if real:
                     x_cm, y_cm = real
                     heading_deg = navigation.compute_aruco_heading(pts)
-
-                    # Update planner and heading (no immediate send)
                     planner.robot_position_cm = (x_cm, y_cm)
                     client_config.ROBOT_HEADING = float(heading_deg)
                 break
@@ -89,12 +87,12 @@ def process_frames(frame_queue, output_queue, stop_event):
                     random.randint(0,255)
                 ))
                 cv2.rectangle(original, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
-                cv2.putText(original, lbl, (int(x1), int(y1)-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+                cv2.putText(original, lbl, (int(x1), int(y1)-10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
             real = navigation.pixel_to_cm(cx_pix, cy_pix)
             if real:
                 gx, gy = navigation.cm_to_grid_coords(real[0], real[1])
-
                 if 'ball' in lbl and not (
                     config.IGNORED_AREA['x_min'] <= real[0] <= config.IGNORED_AREA['x_max'] and
                     config.IGNORED_AREA['y_min'] <= real[1] <= config.IGNORED_AREA['y_max']
@@ -111,6 +109,7 @@ def process_frames(frame_queue, output_queue, stop_event):
         frame_grid  = navigation.draw_metric_grid(original)
         frame_route = navigation.draw_full_route(frame_grid, ball_positions_cm)
 
+        # — Optional red‐cross obstacle detection (unchanged) —
         if client_config.homography_matrix is not None:
             hsv = cv2.cvtColor(original, cv2.COLOR_BGR2HSV)
             mask1 = cv2.inRange(hsv, np.array([0,120,70]),  np.array([10,255,255]))
@@ -119,7 +118,8 @@ def process_frames(frame_queue, output_queue, stop_event):
             kernel   = cv2.getStructuringElement(cv2.MORPH_RECT, (5,5))
             red_mask = cv2.morphologyEx(red_mask, cv2.MORPH_CLOSE, kernel)
             red_mask = cv2.morphologyEx(red_mask, cv2.MORPH_OPEN,  kernel)
-            contours, _ = cv2.findContours(red_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            contours, _ = cv2.findContours(red_mask, cv2.RETR_EXTERNAL,
+                                           cv2.CHAIN_APPROX_SIMPLE)
 
             best_cnt, best_area = None, 0
             px_per_x = original.shape[1] / client_config.REAL_WIDTH_CM
@@ -151,15 +151,19 @@ def process_frames(frame_queue, output_queue, stop_event):
                                 new_cross_obs.add((gx, gy))
             obstacles |= new_cross_obs
 
-        # Push (processed_frame, original_timestamp) for display
+        # — Push to display queue —
         try:
             output_queue.put((frame_route, capture_ts), timeout=0.02)
-        except Exception:
+        except:
             pass
 
-        # — Periodic pose send every 1 second —
+        # — Periodic pose send every 0.5s, but only if connected —
         now = time.time()
-        if planner.robot_position_cm is not None and now - last_pose_send >= 0.5:
+        if (
+            planner.robot_position_cm is not None and
+            robot_comm.robot_sock is not None and
+            now - last_pose_send >= 0.5
+        ):
             x_cm, y_cm = planner.robot_position_cm
             try:
                 robot_comm.send_pose(x_cm, y_cm, client_config.ROBOT_HEADING)
@@ -168,4 +172,3 @@ def process_frames(frame_queue, output_queue, stop_event):
             last_pose_send = now
 
     print("process_frames exiting")
-    print("🖥️ process_frames exiting")

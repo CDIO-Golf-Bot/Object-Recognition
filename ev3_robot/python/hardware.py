@@ -22,7 +22,6 @@ def get_heading():
     """Returns current gyro angle (0–360) after offset."""
     raw = gyro.angle
     fused = (normalize_angle(-raw) + gyro_offset) % 360.0
-    print("[get_heading] raw={:.1f}, fused={:.1f}".format(raw, fused))
     return fused
 
 def calibrate_gyro_aruco(aruco_heading):

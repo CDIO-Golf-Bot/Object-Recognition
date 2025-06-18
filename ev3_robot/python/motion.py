@@ -43,120 +43,140 @@ def _reverse_aux():
     hardware.aux_motor.off()
 
 # Heading fusion
-
 def rotate_to_heading(target_theta_deg, angle_thresh=config.ANGLE_TOLERANCE):
-    print("[rotate_to_heading] Target: {:.2f} deg (tolerance {} deg)".format(target_theta_deg, angle_thresh))
+    """
+    Rotate the robot in place until its heading matches target_theta_deg
+    within angle_thresh degrees.
+    """
+    gain = 1.0            # proportional gain
+    min_power = 20        # minimum turn power (%)
     try:
         while True:
             current = hardware.get_heading()
-
             error = utils.heading_error(target_theta_deg, current)
-            print("[rotate_to_heading] Current: {:.2f} deg, Error: {:.2f} deg".format(current, error))
 
+            # stop when within tolerance
             if abs(error) <= angle_thresh:
-                print("[rotate_to_heading] Heading within {} deg: {:.2f} deg".format(angle_thresh, current))
                 break
 
-            power = max(min(abs(error) * 0.5, config.TURN_SPEED_PCT), 5)
+            # compute turn power
+            power = max(min(abs(error) * gain, config.TURN_SPEED_PCT), min_power)
+
             if error > 0:
-                print("[rotate_to_heading] Turning LEFT (CCW) with power {:.2f}".format(power))
                 hardware.tank.on(power, -power)
             else:
-                print("[rotate_to_heading] Turning RIGHT (CW) with power {:.2f}".format(power))
                 hardware.tank.on(-power, power)
-            time.sleep(0.01)
+
+            # tight loop for snappier response
+            time.sleep(0.005)
     finally:
         hardware.tank.off()
-        _stop_aux()
+
+
 
 
 def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0):
     if speed_pct is None:
         speed_pct = config.DRIVE_SPEED_PCT
 
-    # 1) ONE-TIME gyro fuse up front
+    # 1) one-time gyro reset
     if robot_pose["theta"] is None:
-        print("No ArUco heading—cannot drive.")
-        return
+        print("No ArUco heading—cannot drive."); return
     hardware.gyro.reset()
     time.sleep(0.05)
     hardware.gyro_offset = robot_pose["theta"]
 
-    # 2) grab initial vision fix
-    if robot_pose["x"] is None or (time.time() - robot_pose["timestamp"]) > 5.5:
-        print("No vision yet—cannot drive.")
-        return
+    # 2) initial vision fix
+    if robot_pose["x"] is None or (time.time() - robot_pose["timestamp"]) > 1.0:
+        print("No recent vision—cannot drive."); return
     current_x, current_y = robot_pose["x"], robot_pose["y"]
-    print("[drive_to_point] start at x={:.2f}, y={:.2f}".format(current_x, current_y))
 
-    # 3) face the goal once
-    dx = target_x_cm - current_x
-    dy = target_y_cm - current_y
-    initial_heading = utils.heading_from_deltas(dx, dy)
-    print("[drive_to_point] initial dx={:.2f}, dy={:.2f}, heading={:.2f}".format(dx, dy, initial_heading))
-    rotate_to_heading(initial_heading)
+    # 3) face the goal
+    dx, dy = target_x_cm - current_x, target_y_cm - current_y
+    rotate_to_heading(utils.heading_from_deltas(dx, dy))
 
-    # 4) PD setup
-    prev_error = 0.0
-    LOOP_DT    = 0.01
+    # controller & motion setup
+    prev_error    = 0.0
+    smoothed_corr = 0.0
+    LOOP_DT       = 0.01
+    alpha         = 0.2
+    max_speed_cm_s= (config.DRIVE_SPEED_PCT/100)*config.MAX_LINEAR_SPEED_CM_S
 
-    def clamp(v, lo, hi):
-        return lo if v < lo else hi if v > hi else v
+    # odometry state
+    last_tick_l = hardware.tank.left_motor.position
+    last_tick_r = hardware.tank.right_motor.position
+
+    prev_l_spd = prev_r_spd = speed_pct
+    SLEW_LIMIT = 5.0
+
+    def clamp(v, lo, hi): return max(lo, min(v, hi))
+    def slew(n, o, lim):
+        d = n - o
+        if   d >  lim: return o + lim
+        if   d < -lim: return o - lim
+        return n
 
     hardware.aux_motor.on(config.AUX_FORWARD_PCT)
+
     try:
-        last_x, last_y = current_x, current_y
-
         while True:
-            # update pose (or reuse last)
-            if robot_pose["x"] is not None and (time.time() - robot_pose["timestamp"]) < 5.5:
-                current_x, current_y = robot_pose["x"], robot_pose["y"]
-                last_x, last_y = current_x, current_y
-            else:
-                print("[drive_to_point] using last known pose x={:.2f}, y={:.2f}".format(last_x, last_y))
-                current_x, current_y = last_x, last_y
+            # 0) dead-reckon from encoders
+            new_l = hardware.tank.left_motor.position
+            new_r = hardware.tank.right_motor.position
+            d_l = new_l - last_tick_l; d_r = new_r - last_tick_r
+            last_tick_l, last_tick_r = new_l, new_r
+            dcm_l = d_l * config.WHEEL_CIRC_CM / config.TICKS_PER_REV
+            dcm_r = d_r * config.WHEEL_CIRC_CM / config.TICKS_PER_REV
+            dcenter = (dcm_l + dcm_r)/2
+            θ = math.radians(hardware.get_heading())
+            current_x += dcenter * math.cos(θ)
+            current_y += dcenter * math.sin(θ)
 
-            # check arrival
-            dx = target_x_cm - current_x
-            dy = target_y_cm - current_y
-            dist = math.hypot(dx, dy)
-            print("[drive_to_point] dx={:.2f}, dy={:.2f}, dist={:.2f}".format(dx, dy, dist))
-            if dist <= dist_thresh_cm:
-                print("[drive_to_point] arrived within {} cm".format(dist_thresh_cm))
+            # 1) vision fuse if fresh
+            age = time.time() - robot_pose["timestamp"]
+            if age < 0.5:
+                # simple override: take vision pose
+                current_x, current_y = robot_pose["x"], robot_pose["y"]
+
+            # 2) stopping check (no waiting!)
+            dist = math.hypot(target_x_cm - current_x,
+                              target_y_cm - current_y)
+            # inflate for lag:
+            effective_thresh = dist_thresh_cm + max_speed_cm_s * age
+            if dist <= effective_thresh:
+                print("Arrived (dist {:.1f} <= {:.1f})".format(dist, effective_thresh))
                 break
 
-            # compute heading error
-            desired = utils.heading_from_deltas(dx, dy)
-            current = hardware.get_heading()
-            error = ((desired - current + 180) % 360) - 180
-            print("[drive_to_point] desired={:.2f}, current={:.2f}, error={:.2f}".format(desired, current, error))
-
-            # true PD
+            # 3) PD on heading
+            desired = utils.heading_from_deltas(
+                        target_x_cm - current_x,
+                        target_y_cm - current_y)
+            curr_h = hardware.get_heading()
+            error = ((desired - curr_h + 180) % 360) - 180
             P = config.GYRO_KP * error
             D = config.GYRO_KD * (error - prev_error) / LOOP_DT
-            raw_corr = P + D
             prev_error = error
-            print("[drive_to_point] P={:.2f}, D={:.2f}, raw_corr={:.2f}".format(P, D, raw_corr))
+            raw_corr = clamp(P + D, -config.MAX_CORRECTION, config.MAX_CORRECTION)
+            smoothed_corr = alpha*raw_corr + (1-alpha)*smoothed_corr
+            corr = smoothed_corr
 
-            # scale and clamp
-            steering_gain = min(dist / 50.0, 1.0)
-            corr = steering_gain * clamp(raw_corr, -config.MAX_CORRECTION, config.MAX_CORRECTION)
-            print("[drive_to_point] steering_gain={:.2f}, corr={:.2f}".format(steering_gain, corr))
-
-            # apply correction
-            FEED_FORWARD = config.FEED_FORWARD  # e.g. 2.0 percent
-            raw_l = speed_pct + corr + config.LEFT_BIAS + FEED_FORWARD
-            raw_r = speed_pct - corr + config.RIGHT_BIAS - FEED_FORWARD
+            # 4) compute & slew-limit speeds
+            raw_l = speed_pct + corr + config.LEFT_BIAS + config.FEED_FORWARD
+            raw_r = speed_pct - corr + config.RIGHT_BIAS - config.FEED_FORWARD
             l_spd = clamp(raw_l, -100, 100)
             r_spd = clamp(raw_r, -100, 100)
-            print("[drive_to_point] l_spd={:.2f}, r_spd={:.2f}".format(l_spd, r_spd))
 
-            hardware.tank.on(SpeedPercent(l_spd), SpeedPercent(r_spd))
+            l_spd = slew(l_spd, prev_l_spd, SLEW_LIMIT)
+            r_spd = slew(r_spd, prev_r_spd, SLEW_LIMIT)
+            prev_l_spd, prev_r_spd = l_spd, r_spd
+
+            hardware.tank.on(SpeedPercent(l_spd),
+                             SpeedPercent(r_spd))
             time.sleep(LOOP_DT)
 
     finally:
         hardware.tank.off()
-        hardware.aux_motor.off()
+
 
 
 
