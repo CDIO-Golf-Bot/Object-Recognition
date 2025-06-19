@@ -34,6 +34,10 @@ ARUCO_MARKER_ID = 100
 ARUCO_REFERENCE_POINT  = "center"
 START_OFFSET_CM = 0.0
 
+# border‐buffer around the entire field (in cm → grid cells)
+BORDER_BUFFER_CM    = 8
+BORDER_BUFFER_CELLS = int(np.ceil(BORDER_BUFFER_CM / GRID_SPACING_CM))
+
 # path
 ARRIVAL_THRESHOLD_CM = 4.0   # cm distance to goal to consider arrived
 MAX_SEGMENT_TIME = 15.0          # Max seconds to wait for a segment to complete (skip if too long)

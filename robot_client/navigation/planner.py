@@ -123,20 +123,16 @@ def get_expanded_obstacles(raw):
                     exp.add((nx, ny))
     return exp
 
-def greedy_route(points, astar, grid_w, grid_h, obstacles_set):
+def greedy_route(points, distance_map):
     """
-    Greedily find a route through points using A*.
-    Returns a list of (x_cm, y_cm) tuples.
+    Greedily find a route through points using precomputed distances.
+    Returns a list of indices representing the route.
     """
     unvisited = set(range(1, len(points)))  # skip start (0)
     route = [0]
     curr = 0
     while unvisited:
-        # Find nearest unvisited point using A* path length
-        next_node = min(
-            unvisited,
-            key=lambda j: len(astar(points[curr], points[j], grid_w, grid_h, obstacles_set))
-        )
+        next_node = min(unvisited, key=lambda j: distance_map[(curr, j)][0])
         route.append(next_node)
         unvisited.remove(next_node)
         curr = next_node
@@ -181,7 +177,7 @@ def compute_best_route(balls_list, goal_name):
             dm[(j, i)] = (len(path), list(reversed(path)))
 
      # Use greedy_route to get the order
-    route_indices = greedy_route(points, astar, grid_w, grid_h, gu.obstacles)
+    route_indices = greedy_route(points, dm)
 
     # Build route in cm and grid cells
     route_cm = [start_cm] + [balls_list[i-1][0:2] for i in route_indices[1:]] + [goal_cm]

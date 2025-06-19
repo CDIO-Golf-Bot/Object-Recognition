@@ -71,7 +71,7 @@ random.seed(RANDOM_SEED)
 # === END CONFIGURABLE CONSTANTS ===
 
 # === Initialize YOLO Models ===
-yolo_model = YOLO("weights.pt")
+yolo_model = YOLO("weights_v4.pt") 
 
 # === Video Capture Setup ===
 cap = cv2.VideoCapture(CAMERA_INDEX, cv2.CAP_DSHOW)
