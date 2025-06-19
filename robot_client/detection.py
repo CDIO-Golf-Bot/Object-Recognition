@@ -166,7 +166,7 @@ def process_frames(frame_queue, output_queue, stop_event):
         ):
             x_cm, y_cm = planner.robot_position_cm
             try:
-                robot_comm.send_pose(x_cm, y_cm, client_config.ROBOT_HEADING)
+                robot_comm.send_pose(x_cm, y_cm, client_config.ROBOT_HEADING, timestamp=capture_ts)
             except Exception as e:
                 print(f"🔴 send_pose exception: {e}")
             last_pose_send = now

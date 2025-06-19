@@ -5,6 +5,7 @@ import time
 from robot_client.config import ROBOT_HEADING
 from robot_client.navigation.planner import compress_path
 from robot_client.config import ROBOT_IP, ROBOT_PORT
+import config
 
 robot_sock = None
 
@@ -45,20 +46,22 @@ def send_path(grid_path: list, heading: float = ROBOT_HEADING):
     # this also sends the deliver command under the hood:
     deliver_cmd = json.dumps({"deliver": True}).encode("utf-8") + b'\n'
     robot_sock.sendall(deliver_cmd)
-def send_pose(x_cm, y_cm, theta_deg) -> bool:
+def send_pose(x_cm, y_cm, theta_deg, timestamp = None) -> bool:
     """
     Send a one-off pose update to the robot via send_cmd().
     Returns True on success, False on failure.
     """
     if robot_sock is None:
         return False
-    pose_msg = {
-        "pose": {
-            "x": float(round(x_cm, 2)),
-            "y": float(round(y_cm, 2)),
-            "theta": float(round(theta_deg, 1))
-        }
+    pose = {
+        "x":     float(round(x_cm, 2)),
+        "y":     float(round(y_cm, 2)),
+        "theta": float(round(theta_deg, 1))
     }
+    # include timestamp if provided
+    if timestamp is not None:
+        pose["timestamp"] = float(timestamp)
+    pose_msg = {"pose": pose}
     json_str = json.dumps(pose_msg)
     print("📥 Pose → {}".format(json_str))
 
