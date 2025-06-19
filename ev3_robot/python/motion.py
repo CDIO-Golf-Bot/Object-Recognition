@@ -49,6 +49,8 @@ def rotate_to_heading(target_theta_deg, angle_thresh=config.ANGLE_TOLERANCE):
     """
     gain = 1.0            # proportional gain
     min_power = 20        # minimum turn power (%)
+    time.sleep(0.1)
+    hardware.calibrate_gyro_aruco(robot_pose["theta"])
     try:
         while True:
             current = hardware.get_heading()
@@ -124,13 +126,9 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
     try:
         while True:
 
-            age = time.time() - robot_pose["timestamp"]
-            if age >= config.MAX_ARUCO_AGE:
-                print("No tag detected (age {:.2f}s, {:.2f}s). stopping".format(
-                    age, config.MAX_ARUCO_AGE))
-                hardware.tank.off()
-                hardware.aux_motor.off()
-                return
+            while (robot_pose["x"] is None or (time.time() - robot_pose["timestamp"]) > config.MAX_ARUCO_AGE):
+                print("[drive_to_point] Waiting for fresh vision pose...")
+                time.sleep(0.2)
   
             now = time.time()
             if now - last_log >= config.LOG_INTERVAL:
@@ -144,7 +142,7 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
                 last_log = now
 
             # every 0.2 s, re-zero the gyro (even if the camera is a bit laggy)
-            if time.time() - last_cal_time >= 0.4:
+            if time.time() - last_cal_time >= 0.2:
                 if (robot_pose["theta"] is not None
                     and time.time() - robot_pose["timestamp"] < config.MAX_ARUCO_AGE):
                     hardware.calibrate_gyro_aruco(robot_pose["theta"])

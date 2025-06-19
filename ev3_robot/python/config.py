@@ -40,5 +40,5 @@ default_MAX_LINEAR_SPEED_CM_S = 20.0  # calibrate me!
 TICKS_PER_REV = 360        # your motor’s encoder ticks per wheel rev
 MAX_LINEAR_SPEED_CM_S = 20 # calibrate: robot speed in cm/s at 100%
 
-MAX_ARUCO_AGE   = 1.0
-LOG_INTERVAL = 0.5
+MAX_ARUCO_AGE   = 0.6
+LOG_INTERVAL = 1.0
