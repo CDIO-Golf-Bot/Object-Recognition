@@ -7,7 +7,6 @@ import config
 import hardware
 import utils
 
-
 # Attempt to initialize Ultrasonic Sensor (port from config)
 try:
     from ev3dev2.sensor.lego import UltrasonicSensor
@@ -81,14 +80,16 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
 
     # 1) one-time gyro reset
     if robot_pose["theta"] is None:
-        print("No ArUco heading—cannot drive."); return
+        print("No ArUco heading— annot drive."); return
     hardware.gyro.reset()
     time.sleep(0.05)
     hardware.gyro_offset = robot_pose["theta"]
+    hardware.calibrate_gyro_aruco(robot_pose["theta"])
+ 
 
     # 2) initial vision fix
     if robot_pose["x"] is None or (time.time() - robot_pose["timestamp"]) > 1.0:
-        print("No recent vision—cannot drive."); return
+        print("No recent vision cannot drive."); return
     current_x, current_y = robot_pose["x"], robot_pose["y"]
 
     # 3) face the goal
@@ -117,9 +118,43 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
         return n
 
     hardware.aux_motor.on(config.AUX_FORWARD_PCT)
+    last_cal_time = time.time()
+    last_log      = time.time()
 
     try:
         while True:
+
+            age = time.time() - robot_pose["timestamp"]
+            if age >= config.MAX_ARUCO_AGE:
+                print("No tag detected (age {:.2f}s, {:.2f}s). stopping".format(
+                    age, config.MAX_ARUCO_AGE))
+                hardware.tank.off()
+                hardware.aux_motor.off()
+                return
+  
+            now = time.time()
+            if now - last_log >= config.LOG_INTERVAL:
+                print("POSE: x={:.2f}, y={:.2f}, theta={:.1f}, ts={:.3f}, age={:.3f}".format(
+                    robot_pose['x'],
+                    robot_pose['y'],
+                    robot_pose['theta'],
+                    robot_pose['timestamp'],
+                    now - robot_pose['timestamp']
+                ))
+                last_log = now
+
+            # every 0.2 s, re-zero the gyro (even if the camera is a bit laggy)
+            if time.time() - last_cal_time >= 0.4:
+                if (robot_pose["theta"] is not None
+                    and time.time() - robot_pose["timestamp"] < config.MAX_ARUCO_AGE):
+                    hardware.calibrate_gyro_aruco(robot_pose["theta"])
+                else:
+                    # still OK to use slightly stale heading
+                    print("Using stale ArUco (age {:.1f}s) for gyro align"
+                          .format(time.time() - robot_pose["timestamp"]))
+                    hardware.calibrate_gyro_aruco(robot_pose["theta"])
+                last_cal_time = time.time()
+
             # 0) dead-reckon from encoders
             new_l = hardware.tank.left_motor.position
             new_r = hardware.tank.right_motor.position

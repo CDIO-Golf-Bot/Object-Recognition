@@ -31,13 +31,14 @@ def handle_client(conn, addr):
 
                     # Handle pose updates immediately
                     if 'pose' in cmd:
+                        pose = cmd['pose']
                         motion.robot_pose.update({
-                            'x':         float(cmd['pose']['x']),
-                            'y':         float(cmd['pose']['y']),
-                            'theta':     float(cmd['pose']['theta']),
+                            'x':         float(pose['x']),
+                            'y':         float(pose['y']),
+                            'theta':     float(pose['theta']),
+                            # always stamp with EV3 time so age>=0
                             'timestamp': time.time()
                         })
-                        #print( "Pose recv: {x:.1f},{y:.1f} (age {age:.2f}s)".format( x=motion.robot_pose['x'], y=motion.robot_pose['y'], age=time.time() - motion.robot_pose['timestamp']))
                         continue
 
                     # Enqueue non-pose commands
