@@ -171,7 +171,8 @@ def compute_best_route(balls_list, goal_name):
     goal_cm = config.GOAL_RANGE[goal_name][0]
     goal_cell = gu.cm_to_grid_coords(goal_cm[0], goal_cm[1])
 
-   
+    gu.obstacles |= gu.get_border_buffer_obstacles()
+
     # Build distance map between start + balls
     dm = {}
     points = [start_cell] + ball_cells
@@ -191,7 +192,6 @@ def compute_best_route(balls_list, goal_name):
         full_cells.extend(dm[(a, b)][1])
     # Add path from last ball to goal
     last_ball_idx = route_indices[-1]
-    gu.get_border_buffer_obstacles()  # Ensure border obstacles are cached
     path_to_goal = astar(points[last_ball_idx], goal_cell, grid_w, grid_h, gu.obstacles)
     full_cells.extend(path_to_goal)
 
