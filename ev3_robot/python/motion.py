@@ -6,10 +6,6 @@ from ev3dev2.motor import SpeedPercent
 import config
 import hardware
 import utils
-from HeadingFilter import HeadingFilter
-
-# choose your blend: e.g. 90% gyro, 10% ArUco
-heading_filter = HeadingFilter(alpha=0.9)
 
 # Attempt to initialize Ultrasonic Sensor (port from config)
 try:
@@ -88,6 +84,8 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
     hardware.gyro.reset()
     time.sleep(0.05)
     hardware.gyro_offset = robot_pose["theta"]
+    hardware.calibrate_gyro_aruco(robot_pose["theta"])
+ 
 
     # 2) initial vision fix
     if robot_pose["x"] is None or (time.time() - robot_pose["timestamp"]) > 1.0:
