@@ -6,7 +6,33 @@ from ev3dev2.motor import SpeedPercent
 import config
 import hardware
 import utils
+
+# Shared robot pose for fusion
+robot_pose = {
+    "x": None,
+    "y": None,
+    "theta": None,
+    "timestamp": time.time()
+}
+
 from HeadingFilter import HeadingFilter
+heading_filter = None
+
+def init_heading_filter(timeout=300.0): # 5 min
+    """
+    Block up to timeout seconds for an ArUco tag,
+    then build (or rebuild) the complementary HeadingFilter.
+    """
+    global heading_filter
+    if wait_for_tag(timeout=timeout):
+        hardware.calibrate_gyro_aruco(robot_pose["theta"])
+        heading_filter = HeadingFilter(alpha=0.9,
+                                       vision_init=robot_pose["theta"])
+        print("[motion] Heading filter initialized at theta={:.1f}".format(robot_pose['theta']))
+    else:
+        print("[motion] WARNING: no ArUco tag seen, proceeding without vision fusion")
+        # you could still fallback to pure gyro:
+        heading_filter = HeadingFilter(alpha=1.0, vision_init=None)
 
 # Attempt to initialize Ultrasonic Sensor (port from config)
 try:
@@ -18,14 +44,6 @@ except Exception:
     print("Warning: Ultrasonic sensor not available.")
     distance_sensor = None
     ultrasonic_available = False
-
-# Shared robot pose for fusion
-robot_pose = {
-    "x": None,
-    "y": None,
-    "theta": None,
-    "timestamp": time.time()
-}
 
 # Internal helpers
 
@@ -58,21 +76,15 @@ def wait_for_tag(timeout=REACQUIRE_TIMEOUT_S):
         time.sleep(0.05)
     return False
 
-if wait_for_tag():
-    # align the hardware gyro’s zero/offset to the current tag heading
-    hardware.calibrate_gyro_aruco(robot_pose["theta"])
-    # now build the filter around that freshly zeroed gyro
-    heading_filter = HeadingFilter(alpha=0.9,
-                                   vision_init=robot_pose["theta"])
-else:
-    raise RuntimeError("Could not see any ArUco tag at startup!")
-
 # Heading fusion
 def rotate_to_heading(target_theta_deg, angle_thresh=config.ANGLE_TOLERANCE):
     """
     Rotate the robot in place until its heading matches target_theta_deg
     within angle_thresh degrees.
     """
+    global heading_filter
+    if heading_filter is None:
+        init_heading_filter()
     gain = 1.0            # proportional gain
     min_power = 20        # minimum turn power (%)
     try:
@@ -107,6 +119,9 @@ def drive_to_point(target_x_cm, target_y_cm,
     the robot_pose (vision) for distance & bearing, fused with gyro.
     Stops 'early_stop_sec' seconds before the nominal threshold.
     """
+    global heading_filter
+    if heading_filter is None:
+        init_heading_filter()
     if speed_pct is None:
         speed_pct = config.DRIVE_SPEED_PCT
 
@@ -168,8 +183,9 @@ def drive_to_point(target_x_cm, target_y_cm,
             current_h = heading_filter.update()
 
             # compute target bearing
-            desired = math.degrees(math.atan2(dy0 := (target_x_cm - cx),
-                                             dx0 := (target_y_cm - cy))) % 360
+            dx = target_x_cm - cx
+            dy = target_y_cm - cy
+            desired = math.degrees(math.atan2(dy, dx)) % 360
             error = ((desired - current_h + 180) % 360) - 180
 
             P = config.GYRO_KP * error
@@ -181,8 +197,8 @@ def drive_to_point(target_x_cm, target_y_cm,
 
             # ––––––– WHEEL MIXING –––––––
             # [+] apply same “–corr/+corr” mapping so +corr → CCW turn
-            left_spd  = speed_pct - raw_corr + config.LEFT_BIAS
-            right_spd = speed_pct + raw_corr + config.RIGHT_BIAS
+            left_spd  = speed_pct + raw_corr + config.LEFT_BIAS
+            right_spd = speed_pct - raw_corr + config.RIGHT_BIAS
 
             # clamp & drive
             left_spd  = max(-100, min(100, left_spd))
@@ -202,23 +218,17 @@ def drive_to_point(target_x_cm, target_y_cm,
 
 # Command handler
 def handle_command(cmd, buf):
+    global heading_filter
+
     if 'distance' in cmd:
         buf['distance_buffer'] = buf.get('distance_buffer', 0) + float(cmd['distance'])
 
-    # if we're GOTO + DELIVER in one, drive early-stop then deliver
     if 'goto' in cmd:
         x, y = cmd['goto']
         early = 1.0 if cmd.get('deliver') else 0.0
 
-        # ─── Recalibrate gyro to ArUco before each drive ───
         print("Reacquiring tag and recalibrating gyro...")
-        if wait_for_tag(timeout=0.5):
-            hardware.calibrate_gyro_aruco(robot_pose["theta"])
-            heading_filter.reset(robot_pose["theta"])
-            print("Calibrated zero to {:.1f} degrees".format(robot_pose["theta"]))
-        else:
-            print("Warning: could not reacquire tag using existing calibration")
-
+        init_heading_filter(timeout=0.5)
         drive_to_point(x, y, early_stop_sec=early)
 
     if cmd.get('deliver'):

@@ -1,7 +1,7 @@
 import time
 import math
 import hardware
-from motion import robot_pose
+import motion
 
 class HeadingFilter:
     def __init__(self, alpha=0.9, vision_init=None):
@@ -40,9 +40,9 @@ class HeadingFilter:
         pred = (self.angle + dθ) % 360
 
         # 2) Slow correction: if ArUco is fresh, blend in its heading
-        if (robot_pose["theta"] is not None and
-            (now - robot_pose["timestamp"]) < 0.5):
-            θ_vision = robot_pose["theta"]
+        if (motion.robot_pose["theta"] is not None and
+            (now - motion.robot_pose["timestamp"]) < 0.5):
+            θ_vision = motion.robot_pose["theta"]
             # complementary filter step
             self.angle = (self.alpha * pred + (1 - self.alpha) * θ_vision) % 360
         else:
