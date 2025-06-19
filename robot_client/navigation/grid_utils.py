@@ -33,6 +33,9 @@ def cm_to_grid_coords(x_cm, y_cm):
     """
     return int(x_cm // config.GRID_SPACING_CM), int(y_cm // config.GRID_SPACING_CM)
 
+def grid_to_cm_coords(gx, gy):
+    return gx * config.GRID_SPACING_CM, gy * config.GRID_SPACING_CM
+
 def draw_metric_grid(frame):
     """
     Overlay the cached grid and draw obstacle points.

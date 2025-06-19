@@ -1,3 +1,5 @@
+# camera_io.py
+
 import threading
 import cv2
 import traceback
@@ -6,8 +8,7 @@ import time
 from queue import Empty
 
 from robot_client import config, robot_comm, navigation, detection
-from robot_client.navigation.planner import compute_best_route
-
+from robot_client.navigation.planner import compute_best_route, compress_path
 
 def capture_frames(frame_queue, stop_event):
     """Capture camera frames, tagging each with a timestamp and dropping old ones."""
@@ -90,6 +91,8 @@ def display_frames(output_queue, stop_event):
     fps_timer = time.time()
 
     while not stop_event.is_set():
+        route_cm = None
+        grid_cells = None
         try:
             frame, ts = output_queue.get(timeout=0.02)
             # flush intermediate frames, keep only latest
@@ -121,19 +124,18 @@ def display_frames(output_queue, stop_event):
                     balls,
                     navigation.selected_goal
                 )
-                if route_cm:
-                    navigation.pending_route = route_cm
-                    navigation.full_grid_path = grid_cells
-                    print(f"Planned route: {len(route_cm)} waypoints, {len(grid_cells)} grid points")
+        if route_cm:
+            navigation.pending_route = route_cm
+            navigation.full_grid_path = grid_cells
+            compressed_route_cm = compress_path(route_cm)
+            print(f"Planned route: {len(compressed_route_cm)} waypoints (compressed), {len(route_cm)} original waypoints")
 
-                    navigation.save_route_to_file(navigation.pending_route)
-                    threading.Thread(
-                        target=_execute_route,
-                        args=(navigation.pending_route, stop_event),
-                        daemon=True
-                    ).start()
-                else:
-                    print("Route computation returned no waypoints.")
+            navigation.save_route_to_file(compressed_route_cm)
+            threading.Thread(
+                target=_execute_route,
+                args=(compressed_route_cm, stop_event),
+                daemon=True
+            ).start()
 
         # Compute FPS & latency
         frame_counter += 1

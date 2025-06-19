@@ -75,19 +75,21 @@ def astar(start, goal, grid_w, grid_h, obstacles_set):
 
 def compress_path(points):
     """
-    Remove intermediate colinear points in a grid path.
+    Remove intermediate colinear points in a path of (x_cm, y_cm).
     """
     if len(points) < 3:
         return points[:]
     compressed = [points[0]]
     def norm(dx, dy):
-        return (dx // abs(dx) if dx else 0, dy // abs(dy) if dy else 0)
+        length = (dx**2 + dy**2)**0.5
+        if length == 0: return (0, 0)
+        return (dx/length, dy/length)
     prev_dir = norm(points[1][0]-points[0][0], points[1][1]-points[0][1])
     for curr, nxt in zip(points[1:], points[2:]):
-        curr_dir = norm(nxt[0]-curr[0], nxt[1]-curr[1])
-        if curr_dir != prev_dir:
+        dir = norm(nxt[0]-curr[0], nxt[1]-curr[1])
+        if abs(dir[0] - prev_dir[0]) > 1e-3 or abs(dir[1] - prev_dir[1]) > 1e-3:
             compressed.append(curr)
-        prev_dir = curr_dir
+            prev_dir = dir
     compressed.append(points[-1])
     return compressed
 

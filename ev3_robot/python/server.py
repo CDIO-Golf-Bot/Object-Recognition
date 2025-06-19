@@ -42,6 +42,7 @@ def handle_client(conn, addr):
                         continue
 
                     # Enqueue non-pose commands
+                    print("[SERVER] Received command: {}".format(cmd))
                     robot_pose_queue.put(cmd)
         except Exception as e:
             print("Receiver thread error: {}".format(e))
