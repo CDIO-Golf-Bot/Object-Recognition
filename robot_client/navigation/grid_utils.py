@@ -58,6 +58,8 @@ def get_border_buffer_obstacles():
             for dx in range(-config.BORDER_BUFFER_CELLS, config.BORDER_BUFFER_CELLS+1):
                 for dy in range(-config.BORDER_BUFFER_CELLS, config.BORDER_BUFFER_CELLS+1):
                     border_obs.discard((gx0+dx, gy0+dy))
+
+    return border_obs
     
 
 def draw_metric_grid(frame):

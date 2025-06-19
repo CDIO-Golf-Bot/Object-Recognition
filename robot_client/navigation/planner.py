@@ -96,19 +96,29 @@ def compress_path(points):
 
 def pick_top_n(balls, n=None):
     """
-    Choose the n closest balls from robot_position_cm.
+    Choose the n closest balls from robot_position_cm, ignoring balls in the wall buffer zone.
     """
     global robot_position_cm
+
     if n is None:
         n = config.MAX_BALLS_TO_COLLECT
     start = robot_position_cm or config.START_POINT_CM
     sx, sy = gu.cm_to_grid_coords(*start)
+
+    # Get buffer cells
+    buffer_cells = gu.get_border_buffer_obstacles()
+
+    def in_buffer(b):
+        gx, gy = gu.cm_to_grid_coords(b[0], b[1])
+        return (gx, gy) in buffer_cells
+
     def dist(b):
         gx, gy = gu.cm_to_grid_coords(b[0], b[1])
         return abs(sx - gx) + abs(sy - gy)
-    return sorted(balls, key=dist)[:n]
-    
 
+    # Filter out balls in the buffer zone, then sort and pick top n
+    filtered_balls = [b for b in balls if not in_buffer(b)]
+    return sorted(filtered_balls, key=dist)[:n]
 
 def get_expanded_obstacles(raw):
     """
