@@ -13,7 +13,7 @@ CELL_SIZE_CM    = 2.0
 GYRO_KP         = 3.0
 GYRO_KI         = 0.0003
 GYRO_KD         = 4.0
-MAX_CORRECTION  = 12.0
+MAX_CORRECTION  = 25.0
 ANGLE_TOLERANCE = 5.0
 LEFT_BIAS       = 0.0
 RIGHT_BIAS      = 0.0
@@ -39,3 +39,5 @@ default_MAX_LINEAR_SPEED_CM_S = 20.0  # calibrate me!
 
 TICKS_PER_REV = 360        # your motor’s encoder ticks per wheel rev
 MAX_LINEAR_SPEED_CM_S = 20 # calibrate: robot speed in cm/s at 100%
+
+MAX_ARUCO_AGE   = 1.0

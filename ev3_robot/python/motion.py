@@ -119,15 +119,14 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
 
     hardware.aux_motor.on(config.AUX_FORWARD_PCT)
     last_cal_time = time.time()
-    MAX_ARUCO_AGE   = 2.0
 
     try:
         while True:
 
             # every 0.2 s, re-zero the gyro (even if the camera is a bit laggy)
-            if time.time() - last_cal_time >= 0.2:
+            if time.time() - last_cal_time >= 0.1:
                 if (robot_pose["theta"] is not None
-                    and time.time() - robot_pose["timestamp"] < MAX_ARUCO_AGE):
+                    and time.time() - robot_pose["timestamp"] < config.MAX_ARUCO_AGE):
                     hardware.calibrate_gyro_aruco(robot_pose["theta"])
                 else:
                     # still OK to use slightly stale heading
