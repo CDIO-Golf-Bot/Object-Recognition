@@ -33,11 +33,11 @@ def handle_client(conn, addr):
                     if 'pose' in cmd:
                         pose = cmd['pose']
                         motion.robot_pose.update({
-                            'x':     float(pose['x']),
-                            'y':     float(pose['y']),
-                            'theta': float(pose['theta']),
-                            # use the camera‐provided timestamp (fallback to now if missing)
-                            'timestamp': float(pose.get('timestamp', time.time()))
+                            'x':         float(pose['x']),
+                            'y':         float(pose['y']),
+                            'theta':     float(pose['theta']),
+                            # always stamp with EV3 time so age>=0
+                            'timestamp': time.time()
                         })
                         continue
 
