@@ -103,7 +103,7 @@ def process_frames(frame_queue, output_queue, stop_event):
                 else:
                     new_obstacles.add((gx, gy))
 
-        obstacles |= navigation.get_expanded_obstacles(new_obstacles | navigation.get_border_buffer_obstacles())
+        obstacles |= navigation.get_expanded_obstacles(new_obstacles)
 
         # — Draw grid and route —
         frame_grid  = navigation.draw_metric_grid(original)
