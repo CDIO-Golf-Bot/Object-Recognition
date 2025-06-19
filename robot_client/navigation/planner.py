@@ -191,6 +191,7 @@ def compute_best_route(balls_list, goal_name):
         full_cells.extend(dm[(a, b)][1])
     # Add path from last ball to goal
     last_ball_idx = route_indices[-1]
+    gu.get_border_buffer_obstacles()  # Ensure border obstacles are cached
     path_to_goal = astar(points[last_ball_idx], goal_cell, grid_w, grid_h, gu.obstacles)
     full_cells.extend(path_to_goal)
 
