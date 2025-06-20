@@ -88,6 +88,11 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
     dx, dy = target_x_cm - robot_pose["x"], target_y_cm - robot_pose["y"]
     rotate_to_heading(utils.heading_from_deltas(dx, dy))
 
+    time.sleep(0.2)
+    while (robot_pose["x"] is None or (time.time() - robot_pose["timestamp"]) > config.MAX_ARUCO_AGE):
+        print("[drive_to_point] Waiting for fresh vision pose after turn...")
+        time.sleep(0.1)
+
     prev_error    = 0.0
     smoothed_corr = 0.0
     LOOP_DT       = 0.01
@@ -135,7 +140,16 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
             desired = utils.heading_from_deltas(
                         target_x_cm - robot_pose["x"],
                         target_y_cm - robot_pose["y"])
+            
             curr_h = hardware.get_heading()
+            heading_err = utils.heading_error(desired, curr_h)
+            if abs(heading_err) > 15:  # threshold in degrees
+                print("[drive_to_point] Heading error {:.1f} too large, re-aligning...".format(heading_err))
+                rotate_to_heading(desired)
+                time.sleep(0.2)
+                continue  # restart loop with new heading
+
+
             error = ((desired - curr_h + 180) % 360) - 180
             P = config.GYRO_KP * error
             D = config.GYRO_KD * (error - prev_error) / LOOP_DT
