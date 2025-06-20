@@ -4,9 +4,6 @@ from ev3dev2.sensor.lego import GyroSensor
 from ev3dev2.sensor import INPUT_4
 from utils import normalize_angle
 
-# ————————————————————————
-# ACTUATORS & SENSORS
-# ————————————————————————
 tank      = MoveTank(OUTPUT_B, OUTPUT_C)
 aux_motor = Motor(OUTPUT_D)
 gyro      = GyroSensor(INPUT_4)

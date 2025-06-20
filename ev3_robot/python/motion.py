@@ -94,7 +94,7 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
         speed_pct = config.DRIVE_SPEED_PCT
 
     if robot_pose["theta"] is None or robot_pose["x"] is None or robot_pose["y"] is None:
-        print("No vision pose—cannot drive."); return
+        print("No vision pose cannot drive."); return
 
     calibrate_gyro_if_fresh()
 
