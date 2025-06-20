@@ -17,6 +17,7 @@ MAX_CORRECTION  = 15.0
 ANGLE_TOLERANCE = 5.0
 LEFT_BIAS       = 0.0
 RIGHT_BIAS      = 0.0
+ANGLE_OVERSHOOT = 10.0      # turns if overshoot, for when missing target
 
 # ————————————————————————
 # SPEEDS

@@ -143,7 +143,7 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
             
             curr_h = hardware.get_heading()
             heading_err = utils.heading_error(desired, curr_h)
-            if abs(heading_err) > 15:  # threshold in degrees
+            if abs(heading_err) > config.ANGLE_OVERSHOOT:  # threshold in degrees
                 print("[drive_to_point] Heading error {:.1f} too large, re-aligning...".format(heading_err))
                 rotate_to_heading(desired)
                 time.sleep(0.2)
