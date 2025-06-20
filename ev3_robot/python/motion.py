@@ -51,39 +51,40 @@ def calibrate_gyro_if_fresh():
 def rotate_to_heading(target_theta_deg, angle_thresh=1.5, overshoot_deg=0.0):
     """
     Rotate the robot in place until its heading matches target_theta_deg
-    within angle_thresh degrees. Overshoots by overshoot_deg in the turn direction.
+    within angle_thresh degrees. Uses on_for_degrees for precision.
     """
-    gain = 1.0
-    min_power = 10
-    settle_time = 0.5
+    ROBOT_TRACK_CM = 12.5  # Distance between wheels (adjust for your robot)
+    wheel_circ = config.WHEEL_CIRC_CM
 
-    time.sleep(settle_time)
+    current = hardware.get_heading()
+    error = utils.heading_error(target_theta_deg, current)
+    if abs(error) <= angle_thresh:
+        return
 
-    try:
-        # Determine turn direction (+1 for CCW, -1 for CW)
-        current = hardware.get_heading()
-        error = utils.heading_error(target_theta_deg, current)
-        direction = 1 if error > 0 else -1
+    # Apply overshoot in the turn direction
+    direction = 1 if error > 0 else -1
+    overshoot_target = (target_theta_deg + direction * overshoot_deg) % 360
+    turn_angle = utils.heading_error(overshoot_target, current)
 
-        # Apply overshoot
-        overshoot_target = (target_theta_deg + direction * overshoot_deg) % 360
+    # Calculate wheel degrees for the turn
+    turn_circ = math.pi * ROBOT_TRACK_CM
+    arc_len = (abs(turn_angle) / 360.0) * turn_circ
+    wheel_degrees = (arc_len / wheel_circ) * 360
 
-        while True:
-            current = hardware.get_heading()
-            error = utils.heading_error(overshoot_target, current)
-            if abs(error) <= angle_thresh:
-                break
+    left_speed = config.TURN_SPEED_PCT * direction
+    right_speed = -config.TURN_SPEED_PCT * direction
 
-            power = max(min(abs(error) * gain, config.TURN_SPEED_PCT), min_power)
-            if error > 0:
-                hardware.tank.on(power, -power)
-            else:
-                hardware.tank.on(-power, power)
-            time.sleep(0.005)
-        hardware.tank.off()
-        time.sleep(settle_time)
-    finally:
-        hardware.tank.off()
+    hardware.tank.on_for_degrees(
+        SpeedPercent(left_speed), SpeedPercent(right_speed),
+        abs(wheel_degrees), brake=True, block=True
+    )
+
+    # Optionally, check final heading and do a small correction if needed
+    final_heading = hardware.get_heading()
+    final_error = utils.heading_error(target_theta_deg, final_heading)
+    if abs(final_error) > angle_thresh:
+        # Recursively correct small error
+        rotate_to_heading(target_theta_deg, angle_thresh, 0.0)
 
 
 def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0):
