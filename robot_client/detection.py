@@ -13,11 +13,11 @@ import time
 from robot_client import config, navigation, robot_comm
 from robot_client.navigation import planner
 from robot_client import config as client_config
+from robot_client.navigation import grid_utils
 
 # === Global State ===
 yolo_model = YOLO("weights_v4.pt")  # Adjust path if needed
 ball_positions_cm = []
-obstacles = set()
 class_colors = {}
 
 def pixel_to_cm(px, py):
@@ -32,7 +32,7 @@ def cm_to_grid_coords(x_cm, y_cm):
 
 
 def process_frames(frame_queue, output_queue, stop_event):
-    global ball_positions_cm, obstacles
+    global ball_positions_cm
 
     # Track time for periodic pose sends
     last_pose_send = time.time()
@@ -103,7 +103,7 @@ def process_frames(frame_queue, output_queue, stop_event):
                 else:
                     new_obstacles.add((gx, gy))
 
-        obstacles |= navigation.get_expanded_obstacles(new_obstacles)
+        grid_utils.obstacles |= navigation.get_expanded_obstacles(new_obstacles)
 
         # — Draw grid and route —
         frame_grid  = navigation.draw_metric_grid(original)
@@ -149,7 +149,9 @@ def process_frames(frame_queue, output_queue, stop_event):
                             if (0 <= gx < client_config.REAL_WIDTH_CM // client_config.GRID_SPACING_CM and
                                 0 <= gy < client_config.REAL_HEIGHT_CM // client_config.GRID_SPACING_CM):
                                 new_cross_obs.add((gx, gy))
-            obstacles |= new_cross_obs
+            grid_utils.obstacles |= new_cross_obs
+            if new_cross_obs:
+                print(f"Added {len(new_cross_obs)} cross obstacles: {sorted(new_cross_obs)}")
 
         # — Push to display queue —
         try:
