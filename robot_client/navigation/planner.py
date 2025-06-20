@@ -240,14 +240,9 @@ def draw_full_route(frame, ball_positions):
     
     # Recompute if needed
     global cached_route, full_grid_path
-    changed = (cached_route is None or
-               utils.significant_change(ball_positions, last_ball_positions_cm) or
-               last_selected_goal != selected_goal)
-    if changed:
-        route_cm, grid_cells = compute_best_route(ball_positions, selected_goal)
-        cached_route, full_grid_path = route_cm, grid_cells
-    else:
-        route_cm = cached_route
+    route_cm = cached_route
+    if route_cm is None or len(route_cm) < 2:
+        return frame
 
     # Overlay path
     overlay = frame.copy()
