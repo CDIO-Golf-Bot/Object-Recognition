@@ -74,8 +74,6 @@ def rotate_to_heading(target_theta_deg, angle_thresh=config.ANGLE_TOLERANCE):
         hardware.tank.off()
 
 
-
-
 def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0):
     if speed_pct is None:
         speed_pct = config.DRIVE_SPEED_PCT
@@ -83,6 +81,7 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
     if robot_pose["theta"] is None or robot_pose["x"] is None or robot_pose["y"] is None:
         print("No vision pose—cannot drive."); return
 
+    # Calibrate gyro ONCE at start
     hardware.calibrate_gyro_aruco(robot_pose["theta"])
 
     # Face the goal
@@ -92,7 +91,7 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
     prev_error    = 0.0
     smoothed_corr = 0.0
     LOOP_DT       = 0.01
-    alpha         = 0.2
+    alpha         = 0.4
 
     prev_l_spd = prev_r_spd = speed_pct
     SLEW_LIMIT = 5.0
@@ -105,8 +104,7 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
         return n
 
     hardware.aux_motor.on(config.AUX_FORWARD_PCT)
-    last_cal_time = time.time()
-    last_log      = time.time()
+    last_log = time.time()
 
     try:
         while True:
@@ -126,11 +124,6 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
                 ))
                 last_log = now
 
-            # Optionally re-align gyro
-            if time.time() - last_cal_time >= 0.2:
-                hardware.calibrate_gyro_aruco(robot_pose["theta"])
-                last_cal_time = time.time()
-
             # Always use vision pose for distance
             dist = math.hypot(target_x_cm - robot_pose["x"],
                               target_y_cm - robot_pose["y"])
@@ -138,7 +131,7 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
                 print("Arrived (dist {:.1f} <= {:.1f})".format(dist, dist_thresh_cm))
                 break
 
-            # PD on heading
+            # PD on heading (use gyro only)
             desired = utils.heading_from_deltas(
                         target_x_cm - robot_pose["x"],
                         target_y_cm - robot_pose["y"])
@@ -167,7 +160,6 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
 
     finally:
         hardware.tank.off()
-
 
 
 
