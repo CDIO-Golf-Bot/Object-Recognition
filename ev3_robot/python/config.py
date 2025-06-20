@@ -10,24 +10,25 @@ CELL_SIZE_CM    = 2.0
 # ————————————————————————
 # GYRO PID
 # ————————————————————————
-GYRO_KP         = 3.0
+GYRO_KP         = 1.2
 GYRO_KI         = 0.0003
-GYRO_KD         = 4.0
-MAX_CORRECTION  = 25.0
-ANGLE_TOLERANCE = 5.0
+GYRO_KD         = 2.0
+MAX_CORRECTION  = 15.0
+ANGLE_TOLERANCE = 2.0
 LEFT_BIAS       = 0.0
 RIGHT_BIAS      = 0.0
+ANGLE_OVERSHOOT = 10.0      # turns if overshoot, for when missing target
 
 # ————————————————————————
 # SPEEDS
 # ————————————————————————
-TURN_SPEED_PCT  = 30
-DRIVE_SPEED_PCT = 35
+TURN_SPEED_PCT  = 20
+DRIVE_SPEED_PCT = 30
 FEED_FORWARD    = 2.0
 # ————————————————————————
 # AUX MOTOR
 # ————————————————————————
-AUX_FORWARD_PCT = 25
+AUX_FORWARD_PCT = 15
 AUX_REVERSE_PCT = -25
 AUX_REVERSE_SEC = 5.0
 

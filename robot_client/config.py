@@ -23,7 +23,7 @@ SKIP_FRAMES = 1
 
 # === Real-World Grid Dimensions ===
 REAL_WIDTH_CM   = 167
-REAL_HEIGHT_CM  = 121
+REAL_HEIGHT_CM  = 122
 GRID_SPACING_CM = 2
 CAMERA_HEIGHT = 180             # cm from ground aprox
 ARUCO_MARKER_HEIGHT = 15        # cm from ground aprox
@@ -39,12 +39,12 @@ BORDER_BUFFER_CM    = 12
 BORDER_BUFFER_CELLS = int(np.ceil(BORDER_BUFFER_CM / GRID_SPACING_CM))
 
 # path
-ARRIVAL_THRESHOLD_CM = 4.0   # cm distance to goal to consider arrived
-MAX_SEGMENT_TIME = 15.0          # Max seconds to wait for a segment to complete (skip if too long)
+ARRIVAL_THRESHOLD_CM = 7.0   # cm distance to goal to consider arrived
+MAX_SEGMENT_TIME = 10.0          # Max seconds to wait for a segment to complete (skip if too long)
 
 
 START_POINT_CM = (20, 20)
-GOAL_A_CM      = (REAL_WIDTH_CM - 18, (REAL_HEIGHT_CM // 2) -2)
+GOAL_A_CM      = (REAL_WIDTH_CM - 18, (REAL_HEIGHT_CM // 2))
 GOAL_B_CM      = None
 
 GOAL_RANGE = {

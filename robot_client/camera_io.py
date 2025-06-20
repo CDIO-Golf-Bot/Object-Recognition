@@ -124,14 +124,27 @@ def display_frames(output_queue, stop_event):
                 if route_cm:
                     turn_points = navigation.compress_path(grid_cells)
                     turn_points_cm = navigation.grid_path_to_cm(turn_points)
-                    navigation.pending_route = turn_points_cm
-                    navigation.full_grid_path = grid_cells
-                    print(f"Planned route: {len(route_cm)} waypoints, {len(grid_cells)} grid points")
 
-                    navigation.save_route_to_file(navigation.pending_route)
+                    # Exclude robot's current position from waypoints to send
+                    robot_pos = planner.robot_position_cm
+                    if robot_pos is not None and len(turn_points_cm) > 1:
+                        # If the first turn point is very close to the robot, skip it
+                        dist0 = math.hypot(turn_points_cm[0][0] - robot_pos[0], turn_points_cm[0][1] - robot_pos[1])
+                        if dist0 < config.ARRIVAL_THRESHOLD_CM:
+                            waypoints_to_send = turn_points_cm[1:]
+                        else:
+                            waypoints_to_send = turn_points_cm
+                    else:
+                        waypoints_to_send = turn_points_cm
+
+                    navigation.pending_route = turn_points_cm  # For visualization (draw full path)
+                    navigation.full_grid_path = grid_cells
+                    print(f"Planned route: {len(waypoints_to_send)} waypoints (sent), {len(turn_points_cm)} turn points (visualized), {len(grid_cells)} grid points")
+
+                    navigation.save_route_to_file(waypoints_to_send)
                     threading.Thread(
                         target=_execute_route,
-                        args=(navigation.pending_route, stop_event),
+                        args=(waypoints_to_send, stop_event),
                         daemon=True
                     ).start()
                 else:
