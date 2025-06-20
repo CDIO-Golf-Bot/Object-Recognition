@@ -35,7 +35,7 @@ ARUCO_REFERENCE_POINT  = "center"
 START_OFFSET_CM = 0.0
 
 # border‐buffer around the entire field (in cm → grid cells)
-BORDER_BUFFER_CM    = 8
+BORDER_BUFFER_CM    = 12
 BORDER_BUFFER_CELLS = int(np.ceil(BORDER_BUFFER_CM / GRID_SPACING_CM))
 
 # path
@@ -57,7 +57,7 @@ OBSTACLE_BUFFER_CM = 10
 BUFFER_CELLS = int(np.ceil(OBSTACLE_BUFFER_CM / GRID_SPACING_CM))
 
 # === Detection Thresholds ===
-MAX_BALLS_TO_COLLECT = 4
+MAX_BALLS_TO_COLLECT = 3
 CONFIDENCE_THRESHOLD = 0.50
 OVERLAP_THRESHOLD    = 0.05
 MIN_RED_AREA_PX      = 500
