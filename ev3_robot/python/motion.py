@@ -41,35 +41,47 @@ def _reverse_aux():
     time.sleep(config.AUX_REVERSE_SEC)
     hardware.aux_motor.off()
 
-# Heading fusion
-def rotate_to_heading(target_theta_deg, angle_thresh=config.ANGLE_TOLERANCE):
+def calibrate_gyro_if_fresh():
+    if robot_pose["theta"] is not None and (time.time() - robot_pose["timestamp"]) < 0.5:
+        hardware.calibrate_gyro_aruco(robot_pose["theta"])
+        print("Gyro calibrated to fresh ArUco pose.")
+    else:
+        print("Skipped gyro calibration: pose too old or missing.")
+
+def rotate_to_heading(target_theta_deg, angle_thresh=1.5, overshoot_deg=0.0):
     """
     Rotate the robot in place until its heading matches target_theta_deg
-    within angle_thresh degrees.
+    within angle_thresh degrees. Overshoots by overshoot_deg in the turn direction.
     """
-    gain = 1.0            # proportional gain
-    min_power = 20        # minimum turn power (%)
-    time.sleep(0.1)
-    hardware.calibrate_gyro_aruco(robot_pose["theta"])
+    gain = 1.0
+    min_power = 10
+    settle_time = 0.5
+
+    time.sleep(settle_time)
+
     try:
+        # Determine turn direction (+1 for CCW, -1 for CW)
+        current = hardware.get_heading()
+        error = utils.heading_error(target_theta_deg, current)
+        direction = 1 if error > 0 else -1
+
+        # Apply overshoot
+        overshoot_target = (target_theta_deg + direction * overshoot_deg) % 360
+
         while True:
             current = hardware.get_heading()
-            error = utils.heading_error(target_theta_deg, current)
-
-            # stop when within tolerance
+            error = utils.heading_error(overshoot_target, current)
             if abs(error) <= angle_thresh:
                 break
 
-            # compute turn power
             power = max(min(abs(error) * gain, config.TURN_SPEED_PCT), min_power)
-
             if error > 0:
                 hardware.tank.on(power, -power)
             else:
                 hardware.tank.on(-power, power)
-
-            # tight loop for snappier response
             time.sleep(0.005)
+        hardware.tank.off()
+        time.sleep(settle_time)
     finally:
         hardware.tank.off()
 
@@ -81,14 +93,12 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
     if robot_pose["theta"] is None or robot_pose["x"] is None or robot_pose["y"] is None:
         print("No vision pose—cannot drive."); return
 
-    # Calibrate gyro ONCE at start
-    hardware.calibrate_gyro_aruco(robot_pose["theta"])
+    calibrate_gyro_if_fresh()
 
     # Face the goal
     dx, dy = target_x_cm - robot_pose["x"], target_y_cm - robot_pose["y"]
     rotate_to_heading(utils.heading_from_deltas(dx, dy))
 
-    time.sleep(0.2)
     while (robot_pose["x"] is None or (time.time() - robot_pose["timestamp"]) > config.MAX_ARUCO_AGE):
         print("[drive_to_point] Waiting for fresh vision pose after turn...")
         time.sleep(0.1)
