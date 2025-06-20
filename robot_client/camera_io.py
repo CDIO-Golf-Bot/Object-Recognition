@@ -113,6 +113,7 @@ def display_frames(output_queue, stop_event):
             navigation.selected_goal = 'B'
             print("Selected goal B")
         elif key == ord('s'):
+            planner.dynamic_route = False  # Disable dynamic route updates while executing
             balls = detection.ball_positions_cm
             if not balls:
                 print("No balls detected; cannot plan route.")

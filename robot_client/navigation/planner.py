@@ -29,6 +29,7 @@ pending_route = None
 selected_goal = 'A'
 robot_position_cm = None
 
+dynamic_route = True
 
 def save_route_to_file(route_cm, filename="route.txt"):
     """
@@ -243,7 +244,7 @@ def draw_full_route(frame, ball_positions):
     changed = (cached_route is None or
                utils.significant_change(ball_positions, last_ball_positions_cm) or
                last_selected_goal != selected_goal)
-    if changed:
+    if dynamic_route and changed:
         route_cm, grid_cells = compute_best_route(ball_positions, selected_goal)
         cached_route, full_grid_path = route_cm, grid_cells
     else:

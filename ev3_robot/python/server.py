@@ -5,13 +5,23 @@ from queue import Queue, Empty
 
 import config, hardware, motion
 
+
+def poses_are_equal(p1, p2, tol=1e-3):
+    return (abs(p1['x'] - p2['x']) < tol and
+            abs(p1['y'] - p2['y']) < tol and
+            abs(p1['theta'] - p2['theta']) < tol)
+
 def handle_client(conn, addr):
     print("Client connected: {}".format(addr))
     state = {'distance_buffer': 0.0}
     robot_pose_queue = Queue()
 
+    last_pose = {'x': None, 'y': None, 'theta': None}
+    last_pose_change_time = time.time()
+
     # Receiver thread: read lines, handle poses directly, enqueue other commands
     def recv_loop():
+        nonlocal last_pose, last_pose_change_time
         buf = b''
         try:
             while True:
@@ -32,12 +42,25 @@ def handle_client(conn, addr):
                     # Handle pose updates immediately
                     if 'pose' in cmd:
                         pose = cmd['pose']
+                        new_pose = {
+                            'x': float(pose['x']),
+                            'y': float(pose['y']),
+                            'theta': float(pose['theta'])
+                        }
+                        # Check if pose actually changed
+                        if last_pose['x'] is not None and poses_are_equal(new_pose, last_pose):
+                            # Pose did not change, do not update timestamp
+                            pass
+                        else:
+                            # Pose changed, update last_pose_change_time
+                            last_pose = new_pose
+                            last_pose_change_time = time.time()
+                        # Always update robot_pose, but timestamp is time of last change
                         motion.robot_pose.update({
-                            'x':         float(pose['x']),
-                            'y':         float(pose['y']),
-                            'theta':     float(pose['theta']),
-                            # always stamp with EV3 time so age>=0
-                            'timestamp': time.time()
+                            'x': new_pose['x'],
+                            'y': new_pose['y'],
+                            'theta': new_pose['theta'],
+                            'timestamp': last_pose_change_time
                         })
                         continue
 
