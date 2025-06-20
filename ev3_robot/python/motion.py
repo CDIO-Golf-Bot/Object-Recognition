@@ -80,34 +80,19 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
     if speed_pct is None:
         speed_pct = config.DRIVE_SPEED_PCT
 
-    # 1) one-time gyro reset
-    if robot_pose["theta"] is None:
-        print("No ArUco heading— annot drive."); return
-    hardware.gyro.reset()
-    time.sleep(0.05)
-    hardware.gyro_offset = robot_pose["theta"]
+    if robot_pose["theta"] is None or robot_pose["x"] is None or robot_pose["y"] is None:
+        print("No vision pose—cannot drive."); return
+
     hardware.calibrate_gyro_aruco(robot_pose["theta"])
- 
 
-    # 2) initial vision fix
-    if robot_pose["x"] is None or (time.time() - robot_pose["timestamp"]) > 1.0:
-        print("No recent vision cannot drive."); return
-    current_x, current_y = robot_pose["x"], robot_pose["y"]
-
-    # 3) face the goal
-    dx, dy = target_x_cm - current_x, target_y_cm - current_y
+    # Face the goal
+    dx, dy = target_x_cm - robot_pose["x"], target_y_cm - robot_pose["y"]
     rotate_to_heading(utils.heading_from_deltas(dx, dy))
 
-    # controller & motion setup
     prev_error    = 0.0
     smoothed_corr = 0.0
     LOOP_DT       = 0.01
     alpha         = 0.2
-    max_speed_cm_s= (config.DRIVE_SPEED_PCT/100)*config.MAX_LINEAR_SPEED_CM_S
-
-    # odometry state
-    last_tick_l = hardware.tank.left_motor.position
-    last_tick_r = hardware.tank.right_motor.position
 
     prev_l_spd = prev_r_spd = speed_pct
     SLEW_LIMIT = 5.0
@@ -125,11 +110,11 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
 
     try:
         while True:
-
+            # Wait for fresh vision pose
             while (robot_pose["x"] is None or (time.time() - robot_pose["timestamp"]) > config.MAX_ARUCO_AGE):
                 print("[drive_to_point] Waiting for fresh vision pose...")
                 time.sleep(0.2)
-  
+
             now = time.time()
             if now - last_log >= config.LOG_INTERVAL:
                 print("POSE: x={:.2f}, y={:.2f}, theta={:.1f}, ts={:.3f}, age={:.3f}".format(
@@ -141,49 +126,22 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
                 ))
                 last_log = now
 
-            # every 0.2 s, re-zero the gyro (even if the camera is a bit laggy)
+            # Optionally re-align gyro
             if time.time() - last_cal_time >= 0.2:
-                if (robot_pose["theta"] is not None
-                    and time.time() - robot_pose["timestamp"] < config.MAX_ARUCO_AGE):
-                    hardware.calibrate_gyro_aruco(robot_pose["theta"])
-                else:
-                    # still OK to use slightly stale heading
-                    print("Using stale ArUco (age {:.1f}s) for gyro align"
-                          .format(time.time() - robot_pose["timestamp"]))
-                    hardware.calibrate_gyro_aruco(robot_pose["theta"])
+                hardware.calibrate_gyro_aruco(robot_pose["theta"])
                 last_cal_time = time.time()
 
-            # 0) dead-reckon from encoders
-            new_l = hardware.tank.left_motor.position
-            new_r = hardware.tank.right_motor.position
-            d_l = new_l - last_tick_l; d_r = new_r - last_tick_r
-            last_tick_l, last_tick_r = new_l, new_r
-            dcm_l = d_l * config.WHEEL_CIRC_CM / config.TICKS_PER_REV
-            dcm_r = d_r * config.WHEEL_CIRC_CM / config.TICKS_PER_REV
-            dcenter = (dcm_l + dcm_r)/2
-            θ = math.radians(hardware.get_heading())
-            current_x += dcenter * math.cos(θ)
-            current_y += dcenter * math.sin(θ)
-
-            # 1) vision fuse if fresh
-            age = time.time() - robot_pose["timestamp"]
-            if age < 0.5:
-                # simple override: take vision pose
-                current_x, current_y = robot_pose["x"], robot_pose["y"]
-
-            # 2) stopping check (no waiting!)
-            dist = math.hypot(target_x_cm - current_x,
-                              target_y_cm - current_y)
-            # inflate for lag:
-            effective_thresh = dist_thresh_cm + max_speed_cm_s * age
-            if dist <= effective_thresh:
-                print("Arrived (dist {:.1f} <= {:.1f})".format(dist, effective_thresh))
+            # Always use vision pose for distance
+            dist = math.hypot(target_x_cm - robot_pose["x"],
+                              target_y_cm - robot_pose["y"])
+            if dist <= dist_thresh_cm:
+                print("Arrived (dist {:.1f} <= {:.1f})".format(dist, dist_thresh_cm))
                 break
 
-            # 3) PD on heading
+            # PD on heading
             desired = utils.heading_from_deltas(
-                        target_x_cm - current_x,
-                        target_y_cm - current_y)
+                        target_x_cm - robot_pose["x"],
+                        target_y_cm - robot_pose["y"])
             curr_h = hardware.get_heading()
             error = ((desired - curr_h + 180) % 360) - 180
             P = config.GYRO_KP * error
@@ -193,7 +151,7 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
             smoothed_corr = alpha*raw_corr + (1-alpha)*smoothed_corr
             corr = smoothed_corr
 
-            # 4) compute & slew-limit speeds
+            # Compute & slew-limit speeds
             raw_l = speed_pct + corr + config.LEFT_BIAS + config.FEED_FORWARD
             raw_r = speed_pct - corr + config.RIGHT_BIAS - config.FEED_FORWARD
             l_spd = clamp(raw_l, -100, 100)
