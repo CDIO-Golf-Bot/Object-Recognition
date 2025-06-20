@@ -80,15 +80,14 @@ def process_frames(frame_queue, output_queue, stop_event):
             cx_pix, cy_pix = int((x1 + x2) / 2), int((y1 + y2) / 2)
             is_robot = 'robot' in lbl
 
-            if not is_robot:
-                color = class_colors.setdefault(lbl, (
-                    random.randint(0,255),
-                    random.randint(0,255),
-                    random.randint(0,255)
-                ))
-                cv2.rectangle(original, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
-                cv2.putText(original, lbl, (int(x1), int(y1)-10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+            color = class_colors.setdefault(lbl, (
+                random.randint(0,255),
+                random.randint(0,255),
+                random.randint(0,255)
+            ))
+            cv2.rectangle(original, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
+            cv2.putText(original, lbl, (int(x1), int(y1)-10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
             real = navigation.pixel_to_cm(cx_pix, cy_pix)
             if real:
@@ -100,8 +99,30 @@ def process_frames(frame_queue, output_queue, stop_event):
                     ball_positions_cm.append((real[0], real[1], lbl, cx_pix, cy_pix))
                 elif is_robot and planner.robot_position_cm is None:
                     planner.robot_position_cm = real
-                else:
-                    new_obstacles.add((gx, gy))
+                elif 'red cross' in lbl:  # or whatever your YOLO class name is
+                    # Add all grid cells covered by the bounding box as obstacles
+                    for px in range(int(x1), int(x2), 5):  # step can be adjusted
+                        for py in range(int(y1), int(y2), 5):
+                            real_box = navigation.pixel_to_cm(px, py)
+                            if real_box is None:
+                                continue
+                            gx_box, gy_box = navigation.cm_to_grid_coords(real_box[0], real_box[1])
+                            grid_utils.obstacles.add((gx_box, gy_box))
+                    # Optionally, draw a thicker box and label for the cross
+                    cv2.rectangle(original, (int(x1), int(y1)), (int(x2), int(y2)), (0,0,255), 3)
+                    cv2.putText(original, "red cross", (int(x1), int(y1)-20),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,0,255), 2)
+
+            real = navigation.pixel_to_cm(cx_pix, cy_pix)
+            if real:
+                gx, gy = navigation.cm_to_grid_coords(real[0], real[1])
+                if 'ball' in lbl and not (
+                    config.IGNORED_AREA['x_min'] <= real[0] <= config.IGNORED_AREA['x_max'] and
+                    config.IGNORED_AREA['y_min'] <= real[1] <= config.IGNORED_AREA['y_max']
+                ):
+                    ball_positions_cm.append((real[0], real[1], lbl, cx_pix, cy_pix))
+                elif is_robot and planner.robot_position_cm is None:
+                    planner.robot_position_cm = real
 
         grid_utils.obstacles |= navigation.get_expanded_obstacles(new_obstacles)
 
