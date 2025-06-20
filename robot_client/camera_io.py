@@ -78,7 +78,39 @@ def capture_frames(frame_queue, stop_event):
     finally:
         cap.release()
         print("capture_frames exiting")
+def plan_and_execute_next_route(stop_event):
+    balls = detection.ball_positions_cm
+    if not balls:
+        print("No balls detected; cannot plan next route.")
+        return
+    route_cm, grid_cells = planner.compute_best_route(
+        balls,
+        navigation.selected_goal
+    )
+    if route_cm:
+        turn_points = navigation.compress_path(grid_cells)
+        turn_points_cm = navigation.grid_path_to_cm(turn_points)
+        robot_pos = planner.robot_position_cm
+        if robot_pos is not None and len(turn_points_cm) > 1:
+            dist0 = math.hypot(turn_points_cm[0][0] - robot_pos[0], turn_points_cm[0][1] - robot_pos[1])
+            if dist0 < config.ARRIVAL_THRESHOLD_CM:
+                waypoints_to_send = turn_points_cm[1:]
+            else:
+                waypoints_to_send = turn_points_cm
+        else:
+            waypoints_to_send = turn_points_cm
 
+        navigation.pending_route = turn_points_cm
+        navigation.full_grid_path = grid_cells
+        print(f"Planned next route: {len(waypoints_to_send)} waypoints")
+        navigation.save_route_to_file(waypoints_to_send)
+        threading.Thread(
+            target=_execute_route,
+            args=(waypoints_to_send, stop_event, lambda: plan_and_execute_next_route(stop_event)),
+            daemon=True
+        ).start()
+    else:
+        print("No more balls to collect.")
 
 def display_frames(output_queue, stop_event):
     """Show frames with live FPS & latency, handle keypresses & clicks, plan & stream on 's'."""
@@ -144,7 +176,7 @@ def display_frames(output_queue, stop_event):
                     navigation.save_route_to_file(waypoints_to_send)
                     threading.Thread(
                         target=_execute_route,
-                        args=(waypoints_to_send, stop_event),
+                        args=(waypoints_to_send, stop_event, lambda: plan_and_execute_next_route(stop_event)),
                         daemon=True
                     ).start()
                 else:
@@ -172,7 +204,7 @@ def display_frames(output_queue, stop_event):
     print("display_frames exiting")
 
 
-def _execute_route(route_cm, stop_event):
+def _execute_route(route_cm, stop_event, on_complete=None):
     """Drive each segment until arrival, with abort & timeout."""
     for x_target, y_target in route_cm:
         if stop_event.is_set():
@@ -202,3 +234,5 @@ def _execute_route(route_cm, stop_event):
 
     robot_comm.send_deliver()
     print("🏁 Route complete, delivered")
+    if on_complete:
+        on_complete()
