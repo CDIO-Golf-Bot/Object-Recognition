@@ -72,6 +72,8 @@ def astar(start, goal, grid_w, grid_h, obstacles_set):
                     heapq.heappush(open_set, (f, (nx, ny)))
     return []
 
+def cm_to_grid_coords(x_cm, y_cm):
+    return int(x_cm // config.GRID_SPACING_CM), int(y_cm // config.GRID_SPACING_CM)
 
 def compress_path(points):
     """
@@ -94,19 +96,29 @@ def compress_path(points):
 
 def pick_top_n(balls, n=None):
     """
-    Choose the n closest balls from robot_position_cm.
+    Choose the n closest balls from robot_position_cm, ignoring balls in the wall buffer zone.
     """
     global robot_position_cm
+
     if n is None:
         n = config.MAX_BALLS_TO_COLLECT
     start = robot_position_cm or config.START_POINT_CM
     sx, sy = gu.cm_to_grid_coords(*start)
+
+    # Get buffer cells
+    buffer_cells = gu.get_border_buffer_obstacles()
+
+    def in_buffer(b):
+        gx, gy = gu.cm_to_grid_coords(b[0], b[1])
+        return (gx, gy) in buffer_cells
+
     def dist(b):
         gx, gy = gu.cm_to_grid_coords(b[0], b[1])
         return abs(sx - gx) + abs(sy - gy)
-    return sorted(balls, key=dist)[:n]
-    
 
+    # Filter out balls in the buffer zone, then sort and pick top n
+    filtered_balls = [b for b in balls if not in_buffer(b)]
+    return sorted(filtered_balls, key=dist)[:n]
 
 def get_expanded_obstacles(raw):
     """
@@ -122,6 +134,23 @@ def get_expanded_obstacles(raw):
                 if 0 <= nx <= max_g and 0 <= ny <= max_h:
                     exp.add((nx, ny))
     return exp
+
+
+
+def greedy_route(points, distance_map):
+    """
+    Greedily find a route through points using precomputed distances.
+    Returns a list of indices representing the route.
+    """
+    unvisited = set(range(1, len(points)))  # skip start (0)
+    route = [0]
+    curr = 0
+    while unvisited:
+        next_node = min(unvisited, key=lambda j: distance_map[(curr, j)][0])
+        route.append(next_node)
+        unvisited.remove(next_node)
+        curr = next_node
+    return route
 
 def compute_best_route(balls_list, goal_name):
     """
@@ -152,6 +181,8 @@ def compute_best_route(balls_list, goal_name):
     goal_cm = config.GOAL_RANGE[goal_name][0]
     goal_cell = gu.cm_to_grid_coords(goal_cm[0], goal_cm[1])
 
+    gu.obstacles |= gu.get_border_buffer_obstacles()
+
     # Build distance map between start + balls
     dm = {}
     points = [start_cell] + ball_cells
@@ -161,29 +192,18 @@ def compute_best_route(balls_list, goal_name):
             dm[(i, j)] = (len(path), path)
             dm[(j, i)] = (len(path), list(reversed(path)))
 
-    # Distances from each ball to goal
-    bg = {}
-    for idx, cell in enumerate(ball_cells, start=1):
-        path_to_goal = astar(cell, goal_cell, grid_w, grid_h, gu.obstacles)
-        bg[idx] = (len(path_to_goal), path_to_goal)
-
-    # Permute through ball pickup orders
-    best_perm, best_cost = None, float('inf')
-    indices = list(range(1, len(ball_cells) + 1))
-    for perm in itertools.permutations(indices):
-        cost = 0
-        seq = [0] + list(perm)
-        for a, b in zip(seq, list(perm) + ['G']):
-            cost += bg[a][0] if b == 'G' else dm[(a, b)][0]
-        if cost < best_cost:
-            best_cost, best_perm = cost, perm
+     # Use greedy_route to get the order
+    route_indices = greedy_route(points, dm)
 
     # Build route in cm and grid cells
-    route_cm = [start_cm] + [(balls_list[i-1][0], balls_list[i-1][1]) for i in best_perm] + [goal_cm]
+    route_cm = [start_cm] + [balls_list[i-1][0:2] for i in route_indices[1:]] + [goal_cm]
     full_cells = []
-    for a, b in zip([0] + list(best_perm), list(best_perm) + ['G']):
-        segment = bg[a][1] if b == 'G' else dm[(a, b)][1]
-        full_cells.extend(segment)
+    for a, b in zip(route_indices, route_indices[1:]):
+        full_cells.extend(dm[(a, b)][1])
+    # Add path from last ball to goal
+    last_ball_idx = route_indices[-1]
+    path_to_goal = astar(points[last_ball_idx], goal_cell, grid_w, grid_h, gu.obstacles)
+    full_cells.extend(path_to_goal)
 
     # Cache and return
     pending_route = route_cm

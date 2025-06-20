@@ -33,6 +33,35 @@ def cm_to_grid_coords(x_cm, y_cm):
     """
     return int(x_cm // config.GRID_SPACING_CM), int(y_cm // config.GRID_SPACING_CM)
 
+def get_border_buffer_obstacles():
+    """Generate all edge cells within BORDER_BUFFER_CELLS—but carve out around goals."""
+    max_g = config.REAL_WIDTH_CM // config.GRID_SPACING_CM
+    max_h = config.REAL_HEIGHT_CM // config.GRID_SPACING_CM
+    border_obs = set()
+    # top/bottom bands
+    for gx in range(max_g+1):
+        for gy in range(config.BORDER_BUFFER_CELLS):
+            border_obs.add((gx, gy))
+        for gy in range(max_h - config.BORDER_BUFFER_CELLS + 1, max_h+1):
+            border_obs.add((gx, gy))
+    # left/right bands
+    for gy in range(max_h+1):
+        for gx in range(config.BORDER_BUFFER_CELLS):
+            border_obs.add((gx, gy))
+        for gx in range(max_g - config.BORDER_BUFFER_CELLS + 1, max_g+1):
+            border_obs.add((gx, gy))
+    # carve out goal zones
+    for goals in config.GOAL_RANGE.values():
+        if not goals: continue
+        for goal_cm in goals:
+            gx0, gy0 = cm_to_grid_coords(goal_cm[0], goal_cm[1])
+            for dx in range(-config.BORDER_BUFFER_CELLS, config.BORDER_BUFFER_CELLS+1):
+                for dy in range(-config.BORDER_BUFFER_CELLS, config.BORDER_BUFFER_CELLS+1):
+                    border_obs.discard((gx0+dx, gy0+dy))
+
+    return border_obs
+    
+
 def draw_metric_grid(frame):
     """
     Overlay the cached grid and draw obstacle points.
