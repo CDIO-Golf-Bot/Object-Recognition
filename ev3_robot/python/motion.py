@@ -127,6 +127,7 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
             # Wait for fresh vision pose
             while (robot_pose["x"] is None or (time.time() - robot_pose["timestamp"]) > config.MAX_ARUCO_AGE):
                 print("[drive_to_point] Waiting for fresh vision pose...")
+                hardware.tank.off()
                 time.sleep(0.2)
 
             now = time.time()
