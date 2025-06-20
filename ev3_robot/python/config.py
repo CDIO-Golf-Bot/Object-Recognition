@@ -25,11 +25,11 @@ ANGLE_OVERSHOOT = 10.0      # turns if overshoot, for when missing target
 TURN_SPEED_PCT  = 20
 DRIVE_SPEED_PCT = 30
 FEED_FORWARD    = 2.0
-APPROACH_DISTANCE  = 30.0       # distance for when the robot slows down
+APPROACH_DISTANCE  = 25.0       # distance for when the robot slows down
 # ————————————————————————
 # AUX MOTOR
 # ————————————————————————
-AUX_FORWARD_PCT = 15
+AUX_FORWARD_PCT = 20
 AUX_REVERSE_PCT = -25
 AUX_REVERSE_SEC = 5.0
 

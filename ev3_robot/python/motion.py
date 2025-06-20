@@ -56,6 +56,7 @@ def rotate_to_heading(target_theta_deg, angle_thresh=1.5, overshoot_deg=0.0):
     ROBOT_TRACK_CM = 12.5  # Distance between wheels (adjust for your robot)
     wheel_circ = config.WHEEL_CIRC_CM
 
+    time.sleep(0.2)
     current = hardware.get_heading()
     error = utils.heading_error(target_theta_deg, current)
     if abs(error) <= angle_thresh:
@@ -74,6 +75,7 @@ def rotate_to_heading(target_theta_deg, angle_thresh=1.5, overshoot_deg=0.0):
     left_speed = config.TURN_SPEED_PCT * direction
     right_speed = -config.TURN_SPEED_PCT * direction
 
+    
     hardware.tank.on_for_degrees(
         SpeedPercent(left_speed), SpeedPercent(right_speed),
         abs(wheel_degrees), brake=True, block=True
@@ -175,6 +177,11 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
             approach_factor = clamp(dist / config.APPROACH_DISTANCE, 0.3, 1.0)  # Slow down within 30cm
             base_speed = speed_pct * approach_factor
 
+            # Further slow down if pose is getting old (e.g., >90% of MAX_ARUCO_AGE)
+            pose_age = time.time() - robot_pose["timestamp"]
+            if pose_age > 0.9 * config.MAX_ARUCO_AGE:
+                base_speed *= 0.5  # or another factor as you prefer
+
             # Compute & slew-limit speeds
             raw_l = base_speed + corr + config.LEFT_BIAS + config.FEED_FORWARD
             raw_r = base_speed - corr + config.RIGHT_BIAS - config.FEED_FORWARD
@@ -184,6 +191,13 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
             l_spd = slew(l_spd, prev_l_spd, SLEW_LIMIT)
             r_spd = slew(r_spd, prev_r_spd, SLEW_LIMIT)
             prev_l_spd, prev_r_spd = l_spd, r_spd
+
+
+            # Check pose age before moving
+            if (robot_pose["x"] is None or pose_age > config.MAX_ARUCO_AGE):
+                print("[drive_to_point] Pose went stale just before motor command, stopping motors.")
+                hardware.tank.off()
+                continue
 
             hardware.tank.on(SpeedPercent(l_spd),
                              SpeedPercent(r_spd))
