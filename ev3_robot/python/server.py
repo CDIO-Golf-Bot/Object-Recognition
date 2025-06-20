@@ -1,6 +1,6 @@
 # server.py
 
-import socket, json, time, threading
+import socket, json, time, threading, logging
 from queue import Queue, Empty
 
 import config, hardware, motion
@@ -42,6 +42,7 @@ def handle_client(conn, addr):
                         continue
 
                     # Enqueue non-pose commands
+                    print("Enqueueing command: {}".format(cmd))
                     robot_pose_queue.put(cmd)
         except Exception as e:
             print("Receiver thread error: {}".format(e))

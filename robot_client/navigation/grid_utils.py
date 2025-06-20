@@ -27,6 +27,13 @@ def pixel_to_cm(px, py):
     real_pt = cv2.perspectiveTransform(pt, calibration.inv_homography_matrix)[0][0]
     return real_pt[0], real_pt[1]
 
+def grid_path_to_cm(turn_points):
+    """Convert a list of grid (gx,gy) to (x_cm, y_cm)."""
+    return [
+        (gx * config.GRID_SPACING_CM, gy * config.GRID_SPACING_CM)
+        for gx, gy in turn_points
+    ]
+
 def cm_to_grid_coords(x_cm, y_cm):
     """
     Convert real-world cm position to grid cell indices.

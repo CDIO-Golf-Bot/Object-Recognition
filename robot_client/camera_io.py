@@ -6,7 +6,7 @@ import time
 from queue import Empty
 
 from robot_client import config, robot_comm, navigation, detection
-from robot_client.navigation.planner import compute_best_route
+from robot_client.navigation import planner, grid_utils
 
 
 def capture_frames(frame_queue, stop_event):
@@ -117,12 +117,14 @@ def display_frames(output_queue, stop_event):
             if not balls:
                 print("No balls detected; cannot plan route.")
             else:
-                route_cm, grid_cells = compute_best_route(
+                route_cm, grid_cells = planner.compute_best_route(
                     balls,
                     navigation.selected_goal
                 )
                 if route_cm:
-                    navigation.pending_route = route_cm
+                    turn_points = navigation.compress_path(grid_cells)
+                    turn_points_cm = navigation.grid_path_to_cm(turn_points)
+                    navigation.pending_route = turn_points_cm
                     navigation.full_grid_path = grid_cells
                     print(f"Planned route: {len(route_cm)} waypoints, {len(grid_cells)} grid points")
 
