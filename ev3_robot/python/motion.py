@@ -96,7 +96,7 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
 
     calibrate_gyro_if_fresh()
 
-    # Face the goal
+    # Face the goal initially
     dx, dy = target_x_cm - robot_pose["x"], target_y_cm - robot_pose["y"]
     rotate_to_heading(utils.heading_from_deltas(dx, dy))
 
@@ -154,13 +154,14 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
             
             curr_h = hardware.get_heading()
             heading_err = utils.heading_error(desired, curr_h)
-            if abs(heading_err) > config.ANGLE_OVERSHOOT:  # threshold in degrees
+            # Deadband: only re-align if error is significant
+            if abs(heading_err) > config.ANGLE_OVERSHOOT:
                 print("[drive_to_point] Heading error {:.1f} too large, re-aligning...".format(heading_err))
                 rotate_to_heading(desired)
                 time.sleep(0.2)
                 continue  # restart loop with new heading
 
-
+            # PD controller for heading correction
             error = ((desired - curr_h + 180) % 360) - 180
             P = config.GYRO_KP * error
             D = config.GYRO_KD * (error - prev_error) / LOOP_DT
@@ -169,9 +170,13 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
             smoothed_corr = alpha*raw_corr + (1-alpha)*smoothed_corr
             corr = smoothed_corr
 
+            # Optionally slow down as you approach the target
+            approach_factor = clamp(dist / config.APPROACH_DISTANCE, 0.3, 1.0)  # Slow down within 30cm
+            base_speed = speed_pct * approach_factor
+
             # Compute & slew-limit speeds
-            raw_l = speed_pct + corr + config.LEFT_BIAS + config.FEED_FORWARD
-            raw_r = speed_pct - corr + config.RIGHT_BIAS - config.FEED_FORWARD
+            raw_l = base_speed + corr + config.LEFT_BIAS + config.FEED_FORWARD
+            raw_r = base_speed - corr + config.RIGHT_BIAS - config.FEED_FORWARD
             l_spd = clamp(raw_l, -100, 100)
             r_spd = clamp(raw_r, -100, 100)
 
@@ -185,7 +190,6 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
 
     finally:
         hardware.tank.off()
-
 
 
 
