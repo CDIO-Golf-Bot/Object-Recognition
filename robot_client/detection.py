@@ -18,6 +18,7 @@ from robot_client.navigation import grid_utils
 # === Global State ===
 yolo_model = YOLO("weights_v4.pt")  # Adjust path if needed
 ball_positions_cm = []
+red_cross_obstacles = set()
 class_colors = {}
 
 def pixel_to_cm(px, py):
@@ -32,7 +33,7 @@ def cm_to_grid_coords(x_cm, y_cm):
 
 
 def process_frames(frame_queue, output_queue, stop_event):
-    global ball_positions_cm
+    global ball_positions_cm, red_cross_obstacles
 
     # Track time for periodic pose sends
     last_pose_send = time.time()
@@ -74,6 +75,9 @@ def process_frames(frame_queue, output_queue, stop_event):
 
         ball_positions_cm.clear()
         new_obstacles = set()
+         # Clear previous red cross obstacles
+        grid_utils.obstacles -= red_cross_obstacles
+        red_cross_obstacles.clear()
 
         for x1, y1, x2, y2, conf, cls_id in detections:
             lbl = results[0].names[int(cls_id)].lower()
@@ -99,16 +103,16 @@ def process_frames(frame_queue, output_queue, stop_event):
                     ball_positions_cm.append((real[0], real[1], lbl, cx_pix, cy_pix))
                 elif is_robot and planner.robot_position_cm is None:
                     planner.robot_position_cm = real
-                elif 'red cross' in lbl:  # or whatever your YOLO class name is
-                    # Add all grid cells covered by the bounding box as obstacles
-                    for px in range(int(x1), int(x2), 5):  # step can be adjusted
+                elif 'red cross' in lbl:
+                    for px in range(int(x1), int(x2), 5):  # step can be adjusted for density
                         for py in range(int(y1), int(y2), 5):
                             real_box = navigation.pixel_to_cm(px, py)
                             if real_box is None:
                                 continue
                             gx_box, gy_box = navigation.cm_to_grid_coords(real_box[0], real_box[1])
                             grid_utils.obstacles.add((gx_box, gy_box))
-                    # Optionally, draw a thicker box and label for the cross
+                            red_cross_obstacles.add((gx_box, gy_box))
+                    # Draw a thicker box and label for the cross
                     cv2.rectangle(original, (int(x1), int(y1)), (int(x2), int(y2)), (0,0,255), 3)
                     cv2.putText(original, "red cross", (int(x1), int(y1)-20),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,0,255), 2)
