@@ -103,7 +103,8 @@ def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=7.0)
     rotate_to_heading(utils.heading_from_deltas(dx, dy))
 
     while (robot_pose["x"] is None or (time.time() - robot_pose["timestamp"]) > config.MAX_ARUCO_AGE):
-        print("[drive_to_point] Waiting for fresh vision pose after turn...")
+        pose_age = time.time() - robot_pose["timestamp"]
+        print("[drive_to_point] Waiting for fresh vision pose... pose_age: {:.3f}  MAX_ARUCO_AGE: {:.3f}".format(pose_age, config.MAX_ARUCO_AGE))
         time.sleep(0.1)
 
     prev_error    = 0.0
