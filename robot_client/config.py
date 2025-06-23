@@ -36,7 +36,7 @@ ARUCO_REFERENCE_POINT  = "center"
 START_OFFSET_CM = 0.0
 
 # border‐buffer around the entire field (in cm → grid cells)
-BORDER_BUFFER_CM    = 13
+BORDER_BUFFER_CM    = 15
 BORDER_BUFFER_CELLS = int(np.ceil(BORDER_BUFFER_CM / GRID_SPACING_CM))
 
 # path
