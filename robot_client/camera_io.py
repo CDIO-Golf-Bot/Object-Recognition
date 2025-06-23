@@ -105,6 +105,9 @@ def display_frames(output_queue, stop_event):
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q'):
             stop_event.set()
+            planner.dynamic_route = True
+            # Optionally, create a new stop_event for future runs:
+            stop_event.clear()
             break
         elif key == ord('1'):
             navigation.selected_goal = 'A'

@@ -10,6 +10,7 @@ Implement path planning and route visualization on the grid:
 """
 
 
+import time
 import cv2
 import numpy as np
 import itertools
@@ -19,6 +20,7 @@ from robot_client import config
 from .. import utils
 from . import grid_utils as gu
 from . import calibration as cal
+from . import planner
 
 # === Routing State ===
 cached_route = None
@@ -237,6 +239,16 @@ def draw_full_route(frame, ball_positions):
         cv2.putText(frame, "ROBOT", (px_i - 20, py_i - 20),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
 
+    if not planner.dynamic_route and hasattr(planner, "last_selected_goal"):
+        goal_cm = config.GOAL_RANGE.get(planner.last_selected_goal, [(0,0)])[0]
+        robot_pos = planner.robot_position_cm
+        if robot_pos is not None:
+            dist_to_goal = np.hypot(robot_pos[0] - goal_cm[0], robot_pos[1] - goal_cm[1])
+            if dist_to_goal < config.ARRIVAL_THRESHOLD_CM:
+                print("✅ Robot reached goal, resuming dynamic pathfinding.")
+                time.sleep(1)
+                planner.dynamic_route = True
+                
     # (rest of the overlay drawing logic remains unchanged)
     
     # Recompute if needed
