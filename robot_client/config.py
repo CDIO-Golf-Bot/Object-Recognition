@@ -36,16 +36,17 @@ ARUCO_REFERENCE_POINT  = "center"
 START_OFFSET_CM = 0.0
 
 # border‐buffer around the entire field (in cm → grid cells)
-BORDER_BUFFER_CM    = 15
+BORDER_BUFFER_CM    = 14
 BORDER_BUFFER_CELLS = int(np.ceil(BORDER_BUFFER_CM / GRID_SPACING_CM))
 
 # path
-ARRIVAL_THRESHOLD_CM = 7.0   # cm distance to goal to consider arrived
+ARRIVAL_THRESHOLD_CM = 12.0   # cm distance to goal to consider arrived
 MAX_SEGMENT_TIME = 10.0          # Max seconds to wait for a segment to complete (skip if too long)
-
+MIN_SEGMENT_LENGHT = 8      # ignore close by turns
 
 START_POINT_CM = (20, 20)
-GOAL_A_CM      = (REAL_WIDTH_CM - 18, (REAL_HEIGHT_CM // 2))
+EXTRA_DISTANCE_TO_GOAL = 16
+GOAL_A_CM      = (REAL_WIDTH_CM - EXTRA_DISTANCE_TO_GOAL, (REAL_HEIGHT_CM // 2))
 GOAL_B_CM      = None
 
 GOAL_RANGE = {
@@ -54,7 +55,7 @@ GOAL_RANGE = {
 }
 
 # === Obstacle Expansion ===
-OBSTACLE_BUFFER_CM = 10
+OBSTACLE_BUFFER_CM = 14
 BUFFER_CELLS = int(np.ceil(OBSTACLE_BUFFER_CM / GRID_SPACING_CM))
 
 # === Detection Thresholds ===
