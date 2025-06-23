@@ -6,7 +6,7 @@ import time
 from queue import Empty
 
 from robot_client import config, robot_comm, navigation, detection
-from robot_client.navigation import planner, grid_utils
+from robot_client.navigation import planner, grid_utils, navigation_helpers
 
 
 def capture_frames(frame_queue, stop_event):
@@ -117,43 +117,9 @@ def display_frames(output_queue, stop_event):
             navigation.selected_goal = 'B'
             print("Selected goal B")
         elif key == ord('s'):
-            planner.dynamic_route = False  # Disable dynamic route updates while executing
-            balls = detection.ball_positions_cm
-            if not balls:
-                print("No balls detected; cannot plan route.")
-            else:
-                route_cm, grid_cells = planner.compute_best_route(
-                    balls,
-                    navigation.selected_goal
-                )
-                if route_cm:
-                    turn_points = navigation.compress_path(grid_cells)
-                    turn_points_cm = navigation.grid_path_to_cm(turn_points)
-
-                    # Exclude robot's current position from waypoints to send
-                    robot_pos = planner.robot_position_cm
-                    if robot_pos is not None and len(turn_points_cm) > 1:
-                        # If the first turn point is very close to the robot, skip it
-                        dist0 = math.hypot(turn_points_cm[0][0] - robot_pos[0], turn_points_cm[0][1] - robot_pos[1])
-                        if dist0 < config.ARRIVAL_THRESHOLD_CM:
-                            waypoints_to_send = turn_points_cm[1:]
-                        else:
-                            waypoints_to_send = turn_points_cm
-                    else:
-                        waypoints_to_send = turn_points_cm
-
-                    navigation.pending_route = turn_points_cm  # For visualization (draw full path)
-                    navigation.full_grid_path = grid_cells
-                    print(f"Planned route: {len(waypoints_to_send)} waypoints (sent), {len(turn_points_cm)} turn points (visualized), {len(grid_cells)} grid points")
-
-                    navigation.save_route_to_file(waypoints_to_send)
-                    threading.Thread(
-                        target=_execute_route,
-                        args=(waypoints_to_send, stop_event),
-                        daemon=True
-                    ).start()
-                else:
-                    print("Route computation returned no waypoints.")
+            planner.dynamic_route = False
+            planner.plan_and_execute(stop_event)
+            
 
         # Compute FPS & latency
         frame_counter += 1
@@ -175,37 +141,3 @@ def display_frames(output_queue, stop_event):
 
     cv2.destroyAllWindows()
     print("display_frames exiting")
-
-
-def _execute_route(route_cm, stop_event):
-    """Drive each segment until arrival, with abort & timeout."""
-    planner.route_active = True
-    for x_target, y_target in route_cm:
-        if stop_event.is_set():
-            print("Route aborted by user")
-            return
-
-        robot_comm.send_goto(x_target, y_target)
-        start_t = time.time()
-        while True:
-            if stop_event.is_set():
-                print("Route aborted during segment")
-                return
-            elapsed = time.time() - start_t
-            if elapsed > config.MAX_SEGMENT_TIME:
-                print(f"⚠️ Timeout ({elapsed:.1f}s) to reach ({x_target:.1f},{y_target:.1f}); skipping")
-                break
-
-            pos = detection.planner.robot_position_cm
-            if pos is not None:
-                cur_x, cur_y = pos
-                dist = math.hypot(x_target - cur_x, y_target - cur_y)
-                if dist < config.ARRIVAL_THRESHOLD_CM:
-                    print(f"Arrived at ({x_target:.1f}, {y_target:.1f}) → d={dist:.1f}cm in {elapsed:.1f}s")
-                    break
-
-            time.sleep(0.05)
-
-    robot_comm.send_deliver()
-    print("🏁 Route complete, delivered")
-    planner.route_active = False

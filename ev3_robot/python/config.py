@@ -14,7 +14,7 @@ GYRO_KP         = 1.2
 GYRO_KI         = 0.0003
 GYRO_KD         = 2.0
 MAX_CORRECTION  = 15.0
-ANGLE_TOLERANCE = 2.0
+ANGLE_TOLERANCE = 1.0
 LEFT_BIAS       = 0.0
 RIGHT_BIAS      = 0.0
 ANGLE_OVERSHOOT = 10.0      # turns if overshoot, for when missing target
@@ -22,10 +22,10 @@ ANGLE_OVERSHOOT = 10.0      # turns if overshoot, for when missing target
 # ————————————————————————
 # SPEEDS
 # ————————————————————————
-TURN_SPEED_PCT  = 20
+TURN_SPEED_PCT  = 25
 DRIVE_SPEED_PCT = 30
 FEED_FORWARD    = 2.0
-APPROACH_DISTANCE  = 5.0       # distance for when the robot slows down almost turn off lower than 5-10
+APPROACH_DISTANCE  = 1.0       # distance for when the robot slows down almost turn off lower than 5
 # ————————————————————————
 # AUX MOTOR
 # ————————————————————————

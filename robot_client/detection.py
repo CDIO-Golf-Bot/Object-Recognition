@@ -76,7 +76,7 @@ def process_frames(frame_queue, output_queue, stop_event):
                 print(f"[DETECTION] Robot: {robot_pos}, Goal: {goal_cm}, Dist: {dist_to_goal}")
                 if dist_to_goal < config.ARRIVAL_THRESHOLD_CM:
                     print("✅ [DETECTION] Robot reached goal, resuming dynamic pathfinding.")
-                    time.sleep(2)
+                    time.sleep(2)       # wait 2 seconds, to ensure delivery
                     planner.dynamic_route = True
 
         if planner.dynamic_route:
@@ -131,8 +131,11 @@ def process_frames(frame_queue, output_queue, stop_event):
                         cv2.rectangle(original, (int(x1), int(y1)), (int(x2), int(y2)), (0,0,255), 3)
                         cv2.putText(original, "red cross", (int(x1), int(y1)-20),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,0,255), 2)
-
+                        
             grid_utils.obstacles |= navigation.get_expanded_obstacles(new_obstacles)
+            if not planner.route_active and ball_positions_cm:
+                planner.dynamic_route = False
+                planner.plan_and_execute(stop_event)
 
             # — Draw grid and route —
             frame_grid  = navigation.draw_metric_grid(original)

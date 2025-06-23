@@ -10,12 +10,15 @@ Implement path planning and route visualization on the grid:
 """
 
 
+import math
+import threading
+import time
 import cv2
 import numpy as np
 import itertools
 import heapq
 
-from robot_client import config
+from robot_client import config, navigation, robot_comm, detection
 from .. import utils
 from . import grid_utils as gu
 from . import calibration as cal
@@ -237,8 +240,6 @@ def draw_full_route(frame, ball_positions):
         cv2.circle(frame, (px_i, py_i), 4, (0, 0, 255), -1)
         cv2.putText(frame, "ROBOT", (px_i - 20, py_i - 20),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-
-    # (rest of the overlay drawing logic remains unchanged)
     
     # Recompute if needed
     global cached_route, full_grid_path
@@ -271,3 +272,70 @@ def draw_full_route(frame, ball_positions):
     cv2.putText(overlay, f"Total Path: {total_cm}cm to Goal {selected_goal}", (10, overlay.shape[0]-20),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, config.TEXT_COLOR, 2)
     return overlay
+
+
+def plan_route():
+    """Plan a route and return waypoints (in cm) and grid cells."""
+    balls = detection.ball_positions_cm
+    if not balls:
+        print("No balls detected; cannot plan route.")
+        return None, None
+    route_cm, grid_cells = compute_best_route(
+        balls,
+        navigation.selected_goal
+    )
+    if route_cm:
+        turn_points = navigation.compress_path(grid_cells)
+        turn_points_cm = navigation.grid_path_to_cm(turn_points)
+        navigation.pending_route = turn_points_cm
+        navigation.full_grid_path = grid_cells
+        print(f"Planned route: {len(turn_points_cm)} waypoints")
+        return turn_points_cm, grid_cells
+    else:
+        print("Route computation returned no waypoints.")
+        return None, None
+
+def execute_route(route_cm, stop_event):
+    """Drive each segment until arrival, with abort & timeout."""
+    global route_active
+    route_active = True
+    for x_target, y_target in route_cm:
+        if stop_event.is_set():
+            print("Route aborted by user")
+            return
+        robot_comm.send_goto(x_target, y_target)
+        start_t = time.time()
+        while True:
+            if stop_event.is_set():
+                print("Route aborted during segment")
+                return
+            elapsed = time.time() - start_t
+            if elapsed > config.MAX_SEGMENT_TIME:
+                print(f"⚠️ Timeout ({elapsed:.1f}s) to reach ({x_target:.1f},{y_target:.1f}); skipping")
+                break
+            pos = detection.planner.robot_position_cm
+            if pos is not None:
+                cur_x, cur_y = pos
+                dist = math.hypot(x_target - cur_x, y_target - cur_y)
+                if dist < config.ARRIVAL_THRESHOLD_CM:
+                    print(f"Arrived at ({x_target:.1f}, {y_target:.1f}) → d={dist:.1f}cm in {elapsed:.1f}s")
+                    break
+            time.sleep(0.05)
+    robot_comm.send_deliver()
+    print("🏁 Route complete, delivered")
+    route_active = False
+
+def plan_and_execute(stop_event):
+    """Plan a route and execute it in a new thread if possible."""
+    route_cm, _ = plan_route()  # Ignore grid_cells if not used
+    if route_cm:
+        t = threading.Thread(
+            target=execute_route,
+            args=(route_cm, stop_event),
+            daemon=True
+        )
+        t.start()
+        return t
+    else:
+        print("No route to execute.")
+        return None
