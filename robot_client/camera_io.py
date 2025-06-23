@@ -178,6 +178,7 @@ def display_frames(output_queue, stop_event):
 
 def _execute_route(route_cm, stop_event):
     """Drive each segment until arrival, with abort & timeout."""
+    planner.route_active = True
     for x_target, y_target in route_cm:
         if stop_event.is_set():
             print("Route aborted by user")
@@ -206,3 +207,4 @@ def _execute_route(route_cm, stop_event):
 
     robot_comm.send_deliver()
     print("🏁 Route complete, delivered")
+    planner.route_active = False

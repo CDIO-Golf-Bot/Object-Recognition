@@ -68,6 +68,17 @@ def process_frames(frame_queue, output_queue, stop_event):
                     planner.robot_position_cm = (x_cm, y_cm)
                     client_config.ROBOT_HEADING = float(heading_deg)
                 break
+        if (not planner.dynamic_route and not planner.route_active and hasattr(planner, "last_selected_goal")):
+            goal_cm = config.GOAL_RANGE.get(planner.last_selected_goal, [(0,0)])[0]
+            robot_pos = planner.robot_position_cm
+            if robot_pos is not None:
+                dist_to_goal = np.hypot(robot_pos[0] - goal_cm[0], robot_pos[1] - goal_cm[1])
+                print(f"[DETECTION] Robot: {robot_pos}, Goal: {goal_cm}, Dist: {dist_to_goal}")
+                if dist_to_goal < config.ARRIVAL_THRESHOLD_CM:
+                    print("✅ [DETECTION] Robot reached goal, resuming dynamic pathfinding.")
+                    time.sleep(2)
+                    planner.dynamic_route = True
+
         if planner.dynamic_route:
             # — YOLO inference —
             results = yolo_model(original, verbose=False)
