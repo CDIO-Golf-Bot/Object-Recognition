@@ -39,6 +39,7 @@ def capture_frames(frame_queue, stop_event):
     cap.set(cv2.CAP_PROP_FPS,        config.FRAMES_PER_SEC)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH,  config.FRAME_WIDTH)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.FRAME_HEIGHT)
+    cap.set(cv2.CAP_PROP_BRIGHTNESS, config.CAMERA_BRIGHTNESS)
 
     # Log actual settings
     actual_w = cap.get(cv2.CAP_PROP_FRAME_WIDTH)

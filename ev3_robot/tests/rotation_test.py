@@ -20,6 +20,6 @@ if __name__=='__main__':
     motion.rotate_to_heading(90)
     print("Done. Current heading:", hardware.get_heading())
     time.sleep(0.3)
-    motion.rotate_to_heading(180)
+    motion.rotate_to_heading(0)
     print("Done. Current heading:", hardware.get_heading())
     time.sleep(2)

@@ -42,11 +42,15 @@ def _reverse_aux():
     hardware.aux_motor.off()
 
 def calibrate_gyro_if_fresh():
-    if robot_pose["theta"] is not None and (time.time() - robot_pose["timestamp"]) < 0.5:
-        hardware.calibrate_gyro_aruco(robot_pose["theta"])
-        print("Gyro calibrated to fresh ArUco pose.")
-    else:
-        print("Skipped gyro calibration: pose too old or missing.")
+    # Wait for a fresh pose before calibrating
+    while (
+        robot_pose["theta"] is None or
+        (time.time() - robot_pose["timestamp"]) >= 0.5
+    ):
+        print("Waiting for fresh pose before gyro calibration...")
+        time.sleep(0.1)
+    hardware.calibrate_gyro_aruco(robot_pose["theta"])
+    print("Gyro calibrated to fresh ArUco pose.")
 
 def rotate_to_heading(target_theta_deg, angle_thresh=1.5, overshoot_deg=0.0):
     """
