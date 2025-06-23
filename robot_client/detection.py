@@ -183,7 +183,12 @@ def process_frames(frame_queue, output_queue, stop_event):
                     print(f"Added {len(new_cross_obs)} cross obstacles: {sorted(new_cross_obs)}")
         
         else:
-            frame_route = navigation.draw_metric_grid(original)
+            # Draw the last sent route (pending_route) if available
+            if hasattr(navigation, "pending_route") and navigation.pending_route:
+                frame_grid = navigation.draw_metric_grid(original)
+                frame_route = navigation.draw_full_route(frame_grid, navigation.pending_route)
+            else:
+                frame_route = navigation.draw_metric_grid(original)
 
         # — Push to display queue —
         try:
