@@ -1,12 +1,35 @@
-import time
+import time, sys
 from ev3dev2.motor import MoveTank, Motor, OUTPUT_B, OUTPUT_C, OUTPUT_D
 from ev3dev2.sensor.lego import GyroSensor
 from ev3dev2.sensor import INPUT_4
 from utils import normalize_angle
 
-tank      = MoveTank(OUTPUT_B, OUTPUT_C)
-aux_motor = Motor(OUTPUT_D)
-gyro      = GyroSensor(INPUT_4)
+
+# Initialize hardware with debug
+try:
+    tank = MoveTank(OUTPUT_B, OUTPUT_C)
+    print("MoveTank initialized on OUTPUT_B and OUTPUT_C.")
+except Exception as e:
+    print("Failed to initialize MoveTank:", e)
+    tank = None
+
+try:
+    aux_motor = Motor(OUTPUT_D)
+    print("Aux Motor initialized on OUTPUT_D.")
+except Exception as e:
+    print("Failed to initialize Aux Motor:", e)
+    aux_motor = None
+
+try:
+    gyro = GyroSensor(INPUT_4)
+    print("GyroSensor initialized on INPUT_4.")
+except Exception as e:
+    print("Failed to initialize GyroSensor:", e)
+    gyro = None
+
+if tank is None or aux_motor is None or gyro is None:
+    print("Critical hardware missing. Exiting.")
+    sys.exit(1)
 
 gyro.mode = 'GYRO-ANG'      # or 'GYRO-ANG-RATE' depending on your firmware
 gyro.reset()                # zero the angle counter

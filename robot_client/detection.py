@@ -68,108 +68,111 @@ def process_frames(frame_queue, output_queue, stop_event):
                     planner.robot_position_cm = (x_cm, y_cm)
                     client_config.ROBOT_HEADING = float(heading_deg)
                 break
+        if planner.dynamic_route:
+            # — YOLO inference —
+            results = yolo_model(original, verbose=False)
+            detections = results[0].boxes.data.tolist()
 
-        # — YOLO inference —
-        results = yolo_model(original, verbose=False)
-        detections = results[0].boxes.data.tolist()
+            ball_positions_cm.clear()
+            new_obstacles = set()
+            # Clear previous red cross obstacles
+            grid_utils.obstacles -= red_cross_obstacles
+            red_cross_obstacles.clear()
 
-        ball_positions_cm.clear()
-        new_obstacles = set()
-         # Clear previous red cross obstacles
-        grid_utils.obstacles -= red_cross_obstacles
-        red_cross_obstacles.clear()
+            for x1, y1, x2, y2, conf, cls_id in detections:
+                lbl = results[0].names[int(cls_id)].lower()
+                cx_pix, cy_pix = int((x1 + x2) / 2), int((y1 + y2) / 2)
+                is_robot = 'robot' in lbl
 
-        for x1, y1, x2, y2, conf, cls_id in detections:
-            lbl = results[0].names[int(cls_id)].lower()
-            cx_pix, cy_pix = int((x1 + x2) / 2), int((y1 + y2) / 2)
-            is_robot = 'robot' in lbl
+                color = class_colors.setdefault(lbl, (
+                    random.randint(0,255),
+                    random.randint(0,255),
+                    random.randint(0,255)
+                ))
+                cv2.rectangle(original, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
+                cv2.putText(original, lbl, (int(x1), int(y1)-10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
-            color = class_colors.setdefault(lbl, (
-                random.randint(0,255),
-                random.randint(0,255),
-                random.randint(0,255)
-            ))
-            cv2.rectangle(original, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
-            cv2.putText(original, lbl, (int(x1), int(y1)-10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+                real = navigation.pixel_to_cm(cx_pix, cy_pix)
+                if real:
+                    gx, gy = navigation.cm_to_grid_coords(real[0], real[1])
+                    if 'ball' in lbl and not (
+                        config.IGNORED_AREA['x_min'] <= real[0] <= config.IGNORED_AREA['x_max'] and
+                        config.IGNORED_AREA['y_min'] <= real[1] <= config.IGNORED_AREA['y_max']
+                    ):
+                        ball_positions_cm.append((real[0], real[1], lbl, cx_pix, cy_pix))
+                    elif is_robot and planner.robot_position_cm is None:
+                        planner.robot_position_cm = real
 
-            real = navigation.pixel_to_cm(cx_pix, cy_pix)
-            if real:
-                gx, gy = navigation.cm_to_grid_coords(real[0], real[1])
-                if 'ball' in lbl and not (
-                    config.IGNORED_AREA['x_min'] <= real[0] <= config.IGNORED_AREA['x_max'] and
-                    config.IGNORED_AREA['y_min'] <= real[1] <= config.IGNORED_AREA['y_max']
-                ):
-                    ball_positions_cm.append((real[0], real[1], lbl, cx_pix, cy_pix))
-                elif is_robot and planner.robot_position_cm is None:
-                    planner.robot_position_cm = real
+                    elif 'red cross' in lbl:
+                        raw_cross_cells = set()
+                        for px in range(int(x1), int(x2), 5):
+                            for py in range(int(y1), int(y2), 5):
+                                real_box = navigation.pixel_to_cm(px, py)
+                                if real_box is None:
+                                    continue
+                                gx_box, gy_box = navigation.cm_to_grid_coords(real_box[0], real_box[1])
+                                raw_cross_cells.add((gx_box, gy_box))
+                        expanded_cross = planner.get_expanded_obstacles(raw_cross_cells)
+                        grid_utils.obstacles |= expanded_cross
+                        red_cross_obstacles |= expanded_cross
+                        # Draw a thicker box and label for the cross
+                        cv2.rectangle(original, (int(x1), int(y1)), (int(x2), int(y2)), (0,0,255), 3)
+                        cv2.putText(original, "red cross", (int(x1), int(y1)-20),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,0,255), 2)
 
-                elif 'red cross' in lbl:
-                    raw_cross_cells = set()
-                    for px in range(int(x1), int(x2), 5):
-                        for py in range(int(y1), int(y2), 5):
-                            real_box = navigation.pixel_to_cm(px, py)
-                            if real_box is None:
-                                continue
-                            gx_box, gy_box = navigation.cm_to_grid_coords(real_box[0], real_box[1])
-                            raw_cross_cells.add((gx_box, gy_box))
-                    expanded_cross = planner.get_expanded_obstacles(raw_cross_cells)
-                    grid_utils.obstacles |= expanded_cross
-                    red_cross_obstacles |= expanded_cross
-                    # Draw a thicker box and label for the cross
-                    cv2.rectangle(original, (int(x1), int(y1)), (int(x2), int(y2)), (0,0,255), 3)
-                    cv2.putText(original, "red cross", (int(x1), int(y1)-20),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,0,255), 2)
+            grid_utils.obstacles |= navigation.get_expanded_obstacles(new_obstacles)
 
-        grid_utils.obstacles |= navigation.get_expanded_obstacles(new_obstacles)
+            # — Draw grid and route —
+            frame_grid  = navigation.draw_metric_grid(original)
+            frame_route = navigation.draw_full_route(frame_grid, ball_positions_cm)
 
-        # — Draw grid and route —
-        frame_grid  = navigation.draw_metric_grid(original)
-        frame_route = navigation.draw_full_route(frame_grid, ball_positions_cm)
+                    # red‐cross obstacle detection (unchanged) —
+            if client_config.homography_matrix is not None:
+                hsv = cv2.cvtColor(original, cv2.COLOR_BGR2HSV)
+                mask1 = cv2.inRange(hsv, np.array([0,120,70]),  np.array([10,255,255]))
+                mask2 = cv2.inRange(hsv, np.array([170,120,70]),np.array([180,255,255]))
+                red_mask = cv2.bitwise_or(mask1, mask2)
+                kernel   = cv2.getStructuringElement(cv2.MORPH_RECT, (5,5))
+                red_mask = cv2.morphologyEx(red_mask, cv2.MORPH_CLOSE, kernel)
+                red_mask = cv2.morphologyEx(red_mask, cv2.MORPH_OPEN,  kernel)
+                contours, _ = cv2.findContours(red_mask, cv2.RETR_EXTERNAL,
+                                            cv2.CHAIN_APPROX_SIMPLE)
 
-        # — Optional red‐cross obstacle detection (unchanged) —
-        if client_config.homography_matrix is not None:
-            hsv = cv2.cvtColor(original, cv2.COLOR_BGR2HSV)
-            mask1 = cv2.inRange(hsv, np.array([0,120,70]),  np.array([10,255,255]))
-            mask2 = cv2.inRange(hsv, np.array([170,120,70]),np.array([180,255,255]))
-            red_mask = cv2.bitwise_or(mask1, mask2)
-            kernel   = cv2.getStructuringElement(cv2.MORPH_RECT, (5,5))
-            red_mask = cv2.morphologyEx(red_mask, cv2.MORPH_CLOSE, kernel)
-            red_mask = cv2.morphologyEx(red_mask, cv2.MORPH_OPEN,  kernel)
-            contours, _ = cv2.findContours(red_mask, cv2.RETR_EXTERNAL,
-                                           cv2.CHAIN_APPROX_SIMPLE)
+                best_cnt, best_area = None, 0
+                px_per_x = original.shape[1] / client_config.REAL_WIDTH_CM
+                px_per_y = original.shape[0] / client_config.REAL_HEIGHT_CM
 
-            best_cnt, best_area = None, 0
-            px_per_x = original.shape[1] / client_config.REAL_WIDTH_CM
-            px_per_y = original.shape[0] / client_config.REAL_HEIGHT_CM
+                for cnt in contours:
+                    area_px = cv2.contourArea(cnt)
+                    if area_px < client_config.MIN_RED_AREA_PX:
+                        continue
+                    x_r, y_r, w_r, h_r = cv2.boundingRect(cnt)
+                    area_cm = (w_r / px_per_x) * (h_r / px_per_y)
+                    if area_cm > client_config.MAX_RED_AREA_CM2:
+                        continue
+                    if area_px > best_area:
+                        best_cnt, best_area = cnt, area_px
 
-            for cnt in contours:
-                area_px = cv2.contourArea(cnt)
-                if area_px < client_config.MIN_RED_AREA_PX:
-                    continue
-                x_r, y_r, w_r, h_r = cv2.boundingRect(cnt)
-                area_cm = (w_r / px_per_x) * (h_r / px_per_y)
-                if area_cm > client_config.MAX_RED_AREA_CM2:
-                    continue
-                if area_px > best_area:
-                    best_cnt, best_area = cnt, area_px
-
-            new_cross_obs = set()
-            if best_cnt is not None:
-                bx, by, bw_cnt, bh_cnt = cv2.boundingRect(best_cnt)
-                for sx in range(bx, bx + bw_cnt, 10):
-                    for sy in range(by, by + bh_cnt, 10):
-                        if cv2.pointPolygonTest(best_cnt, (sx, sy), False) >= 0:
-                            real = pixel_to_cm(sx, sy)
-                            if not real:
-                                continue
-                            gx, gy = cm_to_grid_coords(real[0], real[1])
-                            if (0 <= gx < client_config.REAL_WIDTH_CM // client_config.GRID_SPACING_CM and
-                                0 <= gy < client_config.REAL_HEIGHT_CM // client_config.GRID_SPACING_CM):
-                                new_cross_obs.add((gx, gy))
-            grid_utils.obstacles |= new_cross_obs
-            if new_cross_obs:
-                print(f"Added {len(new_cross_obs)} cross obstacles: {sorted(new_cross_obs)}")
+                new_cross_obs = set()
+                if best_cnt is not None:
+                    bx, by, bw_cnt, bh_cnt = cv2.boundingRect(best_cnt)
+                    for sx in range(bx, bx + bw_cnt, 10):
+                        for sy in range(by, by + bh_cnt, 10):
+                            if cv2.pointPolygonTest(best_cnt, (sx, sy), False) >= 0:
+                                real = pixel_to_cm(sx, sy)
+                                if not real:
+                                    continue
+                                gx, gy = cm_to_grid_coords(real[0], real[1])
+                                if (0 <= gx < client_config.REAL_WIDTH_CM // client_config.GRID_SPACING_CM and
+                                    0 <= gy < client_config.REAL_HEIGHT_CM // client_config.GRID_SPACING_CM):
+                                    new_cross_obs.add((gx, gy))
+                grid_utils.obstacles |= new_cross_obs
+                if new_cross_obs:
+                    print(f"Added {len(new_cross_obs)} cross obstacles: {sorted(new_cross_obs)}")
+        
+        else:
+            frame_route = navigation.draw_metric_grid(original)
 
         # — Push to display queue —
         try:
