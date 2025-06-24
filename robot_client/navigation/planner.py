@@ -229,7 +229,7 @@ def compute_best_route(balls_list, goal_name):
     route_indices = greedy_route(points, dm)
 
    # Build route in cm with approach points before each ball
-    route_cm = [start_cm] + [balls_list[i-1][0:2] for i in route_indices[1:]] + [goal_cm]
+    route_cm = [start_cm] 
     for idx in range(1, len(route_indices) - 1):  # skip start and goal for approach
         curr_idx = route_indices[idx]
         prev_pt = route_cm[-1]
@@ -245,9 +245,7 @@ def compute_best_route(balls_list, goal_name):
     if approach_pt != prev_pt:
         route_cm.append(approach_pt)
     route_cm.append(goal_pt)
-    if approach_pt != prev_pt:
-            route_cm.append(approach_pt)
-    route_cm.append(goal_pt)
+    
 
     # Build full grid cell path for visualization
     full_cells = []
@@ -267,6 +265,7 @@ def compute_best_route(balls_list, goal_name):
     return route_cm[0:], full_cells
 
 def draw_full_route(frame, ball_positions):
+    global cached_route, full_grid_path, pending_route, last_ball_positions_cm, last_selected_goal, dynamic_route, selected_goal
     """
     Draw the route (grid_lines + robot + path) on the given frame,
     with a small dot marking the robot's starting position.
@@ -279,24 +278,25 @@ def draw_full_route(frame, ball_positions):
         pt = np.array([[[robot_position_cm[0], robot_position_cm[1]]]], dtype="float32")
         px, py = cv2.perspectiveTransform(pt, cal.homography_matrix)[0][0]
         px_i, py_i = int(round(px)), int(round(py))
-        # Red in BGR, radius=4 for prominence
         cv2.circle(frame, (px_i, py_i), 4, (0, 0, 255), -1)
         cv2.putText(frame, "ROBOT", (px_i - 20, py_i - 20),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-    
-    # Recompute if needed
-    global cached_route, full_grid_path
-    changed = (cached_route is None or
-               utils.significant_change(ball_positions, last_ball_positions_cm) or
-               last_selected_goal != selected_goal)
-    if dynamic_route and changed:
-        route_cm, grid_cells = compute_best_route(ball_positions, selected_goal)
-        cached_route, full_grid_path = route_cm, grid_cells
+
+    # --- Always draw the route being executed, if any ---
+    if pending_route:
+        route_cm = pending_route
     else:
-        route_cm = cached_route
-    
+        changed = (cached_route is None or
+                   utils.significant_change(ball_positions, last_ball_positions_cm) or
+                   last_selected_goal != selected_goal)
+        if dynamic_route and changed:
+            route_cm, grid_cells = compute_best_route(ball_positions, selected_goal)
+            cached_route, full_grid_path = route_cm, grid_cells
+        else:
+            route_cm = cached_route
+
     if route_cm is None or len(route_cm) < 2:
-            return frame
+        return frame
 
     # Overlay path
     overlay = frame.copy()
@@ -318,7 +318,6 @@ def draw_full_route(frame, ball_positions):
     cv2.putText(overlay, f"Total Path: {total_cm}cm to Goal {selected_goal}", (10, overlay.shape[0]-20),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, config.TEXT_COLOR, 2)
     return overlay
-
 
 def plan_route():
     """Plan a route and return waypoints (in cm) and grid cells."""
