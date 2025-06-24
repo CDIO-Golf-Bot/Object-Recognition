@@ -65,7 +65,12 @@ def process_frames(frame_queue, output_queue, stop_event):
                 if real:
                     x_cm, y_cm = real
                     heading_deg = navigation.compute_aruco_heading(pts)
-                    planner.robot_position_cm = (x_cm, y_cm)
+                    # --- Apply 5cm offset in heading direction ---
+                    offset_cm = config.ARUCO_OFFSET
+                    theta_rad = np.deg2rad(heading_deg)
+                    x_cm_offset = x_cm + offset_cm * np.cos(theta_rad)
+                    y_cm_offset = y_cm - offset_cm * np.sin(theta_rad)
+                    planner.robot_position_cm = (x_cm_offset, y_cm_offset)
                     client_config.ROBOT_HEADING = float(heading_deg)
                 break
         if (not planner.dynamic_route and not planner.route_active and hasattr(planner, "last_selected_goal")):

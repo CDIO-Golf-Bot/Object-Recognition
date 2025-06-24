@@ -33,7 +33,7 @@ PLANE_SCALE = CAMERA_HEIGHT / (CAMERA_HEIGHT - ARUCO_MARKER_HEIGHT)
 
 ARUCO_MARKER_ID = 100
 ARUCO_REFERENCE_POINT  = "center"
-START_OFFSET_CM = 0.0
+ARUCO_OFFSET = 3.0
 
 # border‐buffer around the entire field (in cm → grid cells)
 BORDER_BUFFER_CM    = 14
@@ -45,7 +45,7 @@ MAX_SEGMENT_TIME = 10.0          # Max seconds to wait for a segment to complete
 MIN_SEGMENT_LENGHT = 8      # ignore close by turns
 
 START_POINT_CM = (20, 20)
-EXTRA_DISTANCE_TO_GOAL = 16
+EXTRA_DISTANCE_TO_GOAL = 14
 GOAL_A_CM      = (REAL_WIDTH_CM - EXTRA_DISTANCE_TO_GOAL, (REAL_HEIGHT_CM // 2))
 GOAL_B_CM      = None
 
