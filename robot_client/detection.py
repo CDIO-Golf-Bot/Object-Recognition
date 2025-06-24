@@ -21,6 +21,7 @@ ball_positions_cm = []
 red_cross_obstacles = set()
 class_colors = {}
 
+
 def pixel_to_cm(px, py):
     if client_config.inv_homography_matrix is None:
         return None
@@ -37,6 +38,7 @@ def process_frames(frame_queue, output_queue, stop_event):
 
     # Track time for periodic pose sends
     last_pose_send = time.time()
+    resume_dynamic_route_time = None
 
     while not stop_event.is_set():
         # Grab either (frame, timestamp) or raw frame
@@ -80,9 +82,13 @@ def process_frames(frame_queue, output_queue, stop_event):
                 dist_to_goal = np.hypot(robot_pos[0] - goal_cm[0], robot_pos[1] - goal_cm[1])
                 print(f"[DETECTION] Robot: {robot_pos}, Goal: {goal_cm}, Dist: {dist_to_goal}")
                 if dist_to_goal < config.ARRIVAL_THRESHOLD_CM:
-                    print("✅ [DETECTION] Robot reached goal, resuming dynamic pathfinding.")
-                    time.sleep(2)       # wait 2 seconds, to ensure delivery
-                    planner.dynamic_route = True
+                    print("✅ [DETECTION] Robot reached goal, resuming dynamic pathfinding in 2s.")
+                    resume_dynamic_route_time = time.time() + 2  # <-- Set resume time
+
+        # After all logic, check if it's time to resume
+        if resume_dynamic_route_time is not None and time.time() >= resume_dynamic_route_time:
+            planner.dynamic_route = True
+            resume_dynamic_route_time = None
 
         if planner.dynamic_route:
             # — YOLO inference —
