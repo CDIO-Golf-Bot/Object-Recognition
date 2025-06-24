@@ -162,6 +162,28 @@ def greedy_route(points, distance_map):
         curr = next_node
     return route
 
+def compute_axis_aligned_approach_point(from_pt, to_pt, approach_dist=20):
+    """
+    Return a point approach_dist cm before to_pt, but only along the axis (x or y)
+    that has the largest difference, so the robot always approaches in a straight line.
+    """
+    dx = to_pt[0] - from_pt[0]
+    dy = to_pt[1] - from_pt[1]
+    if abs(dx) > abs(dy):
+        # Approach along x axis
+        if abs(dx) < approach_dist:
+            return from_pt
+        x_approach = to_pt[0] - approach_dist * (1 if dx > 0 else -1)
+        y_approach = to_pt[1]
+    else:
+        # Approach along y axis
+        if abs(dy) < approach_dist:
+            return from_pt
+        x_approach = to_pt[0]
+        y_approach = to_pt[1] - approach_dist * (1 if dy > 0 else -1)
+    return (x_approach, y_approach)
+
+
 def compute_best_route(balls_list, goal_name):
     """
     TSP-like brute-force over up to MAX_BALLS: finds shortest route through balls to goal.
@@ -205,8 +227,28 @@ def compute_best_route(balls_list, goal_name):
      # Use greedy_route to get the order
     route_indices = greedy_route(points, dm)
 
-    # Build route in cm and grid cells
-    route_cm = [start_cm] + [balls_list[i-1][0:2] for i in route_indices[1:]] + [goal_cm]
+   # Build route in cm with approach points before each ball
+    route_cm = [start_cm]
+    for idx in range(1, len(route_indices) - 1):  # skip start and goal for approach
+        curr_idx = route_indices[idx]
+        prev_pt = route_cm[-1]
+        ball_pt = balls_list[curr_idx - 1][0:2]  # balls_list is offset by 1
+        # Insert approach point before the ball
+        approach_pt = compute_axis_aligned_approach_point(prev_pt, ball_pt, approach_dist=20)    
+        if approach_pt != prev_pt:
+            route_cm.append(approach_pt)
+        route_cm.append(ball_pt)
+    goal_pt = goal_cm
+    prev_pt = route_cm[-1]
+    approach_pt = compute_axis_aligned_approach_point(prev_pt, goal_pt, approach_dist=0)
+    if approach_pt != prev_pt:
+        route_cm.append(approach_pt)
+    route_cm.append(goal_pt)
+    if approach_pt != prev_pt:
+            route_cm.append(approach_pt)
+    route_cm.append(goal_pt)
+
+    # Build full grid cell path for visualization
     full_cells = []
     for a, b in zip(route_indices, route_indices[1:]):
         full_cells.extend(dm[(a, b)][1])
@@ -221,7 +263,7 @@ def compute_best_route(balls_list, goal_name):
     last_selected_goal = goal_name
     last_ball_positions_cm = balls_list.copy()
     full_grid_path = full_cells
-    return route_cm[0:], full_cells     # skip first element (start)
+    return route_cm[0:], full_cells
 
 def draw_full_route(frame, ball_positions):
     """
@@ -251,6 +293,9 @@ def draw_full_route(frame, ball_positions):
         cached_route, full_grid_path = route_cm, grid_cells
     else:
         route_cm = cached_route
+    
+    if route_cm is None or len(route_cm) < 2:
+            return frame
 
     # Overlay path
     overlay = frame.copy()
