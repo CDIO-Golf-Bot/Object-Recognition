@@ -93,7 +93,7 @@ def rotate_to_heading(target_theta_deg, angle_thresh=1.5, overshoot_deg=0.0):
         rotate_to_heading(target_theta_deg, angle_thresh, 0.0)
 
 
-def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=10.0):
+def drive_to_point(target_x_cm, target_y_cm, speed_pct=None, dist_thresh_cm=config.DISTANCE_TRESHHOLD):
     if speed_pct is None:
         speed_pct = config.DRIVE_SPEED_PCT
 
