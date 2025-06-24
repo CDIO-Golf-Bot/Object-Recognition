@@ -39,6 +39,7 @@ def process_frames(frame_queue, output_queue, stop_event):
     # Track time for periodic pose sends
     last_pose_send = time.time()
     resume_dynamic_route_time = None
+    pending_plan_after_resume = False
 
     while not stop_event.is_set():
         # Grab either (frame, timestamp) or raw frame
@@ -83,12 +84,19 @@ def process_frames(frame_queue, output_queue, stop_event):
                 print(f"[DETECTION] Robot: {robot_pos}, Goal: {goal_cm}, Dist: {dist_to_goal}")
                 if dist_to_goal < config.ARRIVAL_THRESHOLD_CM:
                     print("✅ [DETECTION] Robot reached goal, resuming dynamic pathfinding in 2s.")
-                    resume_dynamic_route_time = time.time() + 2  # <-- Set resume time
+                    resume_dynamic_route_time = time.time() + 2
+                    pending_plan_after_resume = True  # <-- Set flag
+                    planner.route_active = False      # <-- Allow new route
 
         # After all logic, check if it's time to resume
         if resume_dynamic_route_time is not None and time.time() >= resume_dynamic_route_time:
             planner.dynamic_route = True
             resume_dynamic_route_time = None
+            # If we should plan a new route, do it now
+            if pending_plan_after_resume and planner.route_enabled and not planner.route_active and ball_positions_cm:
+                planner.dynamic_route = False
+                planner.plan_and_execute(stop_event)
+                pending_plan_after_resume = False
 
         if planner.dynamic_route:
             # — YOLO inference —
