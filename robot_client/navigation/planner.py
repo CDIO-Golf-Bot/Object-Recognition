@@ -229,7 +229,7 @@ def compute_best_route(balls_list, goal_name):
     route_indices = greedy_route(points, dm)
 
    # Build route in cm with approach points before each ball
-    route_cm = [start_cm]
+    route_cm = [start_cm] + [balls_list[i-1][0:2] for i in route_indices[1:]] + [goal_cm]
     for idx in range(1, len(route_indices) - 1):  # skip start and goal for approach
         curr_idx = route_indices[idx]
         prev_pt = route_cm[-1]
