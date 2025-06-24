@@ -3,9 +3,8 @@ import json
 import time
 
 from robot_client.config import ROBOT_HEADING
-from robot_client.navigation.planner import compress_path
 from robot_client.config import ROBOT_IP, ROBOT_PORT
-import config
+from robot_client import config
 
 robot_sock = None
 
