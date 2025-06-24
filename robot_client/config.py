@@ -33,14 +33,14 @@ PLANE_SCALE = CAMERA_HEIGHT / (CAMERA_HEIGHT - ARUCO_MARKER_HEIGHT)
 
 ARUCO_MARKER_ID = 100
 ARUCO_REFERENCE_POINT  = "center"
-ARUCO_OFFSET = 3.0
+ARUCO_OFFSET = 1.0      # cmc offset
 
 # border‐buffer around the entire field (in cm → grid cells)
 BORDER_BUFFER_CM    = 14
 BORDER_BUFFER_CELLS = int(np.ceil(BORDER_BUFFER_CM / GRID_SPACING_CM))
 
 # path
-ARRIVAL_THRESHOLD_CM = 12.0   # cm distance to goal to consider arrived
+ARRIVAL_THRESHOLD_CM = 10.0   # cm distance to goal to consider arrived
 MAX_SEGMENT_TIME = 10.0          # Max seconds to wait for a segment to complete (skip if too long)
 MIN_SEGMENT_LENGHT = 8      # ignore close by turns
 

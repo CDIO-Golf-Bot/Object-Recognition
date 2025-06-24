@@ -1,10 +1,7 @@
-# server.py
-
 import socket, json, time, threading, logging
 from queue import Queue, Empty
 
 import config, hardware, motion
-
 
 def poses_are_equal(p1, p2, tol=1e-3):
     return (abs(p1['x'] - p2['x']) < tol and
@@ -18,15 +15,17 @@ def handle_client(conn, addr):
 
     last_pose = {'x': None, 'y': None, 'theta': None}
     last_pose_change_time = time.time()
+    client_alive = True
 
-    # Receiver thread: read lines, handle poses directly, enqueue other commands
     def recv_loop():
-        nonlocal last_pose, last_pose_change_time
+        nonlocal last_pose, last_pose_change_time, client_alive
         buf = b''
         try:
             while True:
                 data = conn.recv(1024)
                 if not data:
+                    print("Client disconnected.")
+                    client_alive = False
                     break
                 buf += data
                 while b'\n' in buf:
@@ -47,15 +46,11 @@ def handle_client(conn, addr):
                             'y': float(pose['y']),
                             'theta': float(pose['theta'])
                         }
-                        # Check if pose actually changed
                         if last_pose['x'] is not None and poses_are_equal(new_pose, last_pose):
-                            # Pose did not change, do not update timestamp
                             pass
                         else:
-                            # Pose changed, update last_pose_change_time
                             last_pose = new_pose
                             last_pose_change_time = time.time()
-                        # Always update robot_pose, but timestamp is time of last change
                         motion.robot_pose.update({
                             'x': new_pose['x'],
                             'y': new_pose['y'],
@@ -64,36 +59,32 @@ def handle_client(conn, addr):
                         })
                         continue
 
-                    # Enqueue non-pose commands
                     print("Enqueueing command: {}".format(cmd))
                     robot_pose_queue.put(cmd)
         except Exception as e:
             print("Receiver thread error: {}".format(e))
         finally:
+            client_alive = False
             conn.close()
 
     threading.Thread(target=recv_loop, daemon=True).start()
 
-    # Main dispatch loop: pull non-pose commands off the queue
-    while True:
+    while client_alive:
         try:
             cmd = robot_pose_queue.get(timeout=0.1)
         except Empty:
             continue
-        # Full-path command
         if 'path' in cmd and 'heading' in cmd:
             try:
                 motion.follow_path(cmd['path'], cmd['heading'])
             except Exception as e:
                 print("Exception in follow_path: {}".format(e))
-
-        # Other commands (turn, distance, goto, face, deliver)
         else:
             try:
                 motion.handle_command(cmd, state)
             except Exception as e:
                 print("Exception in handle_command({}): {}".format(cmd, e))
-
+    print("handle_client exiting for {}".format(addr))
 
 def run_server(host='', port=12345):
     with socket.socket() as srv:

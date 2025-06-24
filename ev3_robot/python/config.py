@@ -18,7 +18,7 @@ ANGLE_TOLERANCE = 1.0
 LEFT_BIAS       = 0.0
 RIGHT_BIAS      = 0.0
 ANGLE_OVERSHOOT = 5.0      # turns if overshoot, for when missing target
-
+DISTANCE_TRESHHOLD = 8.0    # when we say we hit the target
 # ————————————————————————
 # SPEEDS
 # ————————————————————————

@@ -21,7 +21,6 @@ ball_positions_cm = []
 red_cross_obstacles = set()
 class_colors = {}
 
-
 def pixel_to_cm(px, py):
     if client_config.inv_homography_matrix is None:
         return None
@@ -38,7 +37,6 @@ def process_frames(frame_queue, output_queue, stop_event):
 
     # Track time for periodic pose sends
     last_pose_send = time.time()
-    resume_dynamic_route_time = None
 
     while not stop_event.is_set():
         # Grab either (frame, timestamp) or raw frame
@@ -67,12 +65,7 @@ def process_frames(frame_queue, output_queue, stop_event):
                 if real:
                     x_cm, y_cm = real
                     heading_deg = navigation.compute_aruco_heading(pts)
-                    # --- Apply 5cm offset in heading direction ---
-                    offset_cm = config.ARUCO_OFFSET
-                    theta_rad = np.deg2rad(heading_deg)
-                    x_cm_offset = x_cm + offset_cm * np.cos(theta_rad)
-                    y_cm_offset = y_cm - offset_cm * np.sin(theta_rad)
-                    planner.robot_position_cm = (x_cm_offset, y_cm_offset)
+                    planner.robot_position_cm = (x_cm, y_cm)
                     client_config.ROBOT_HEADING = float(heading_deg)
                 break
         if (not planner.dynamic_route and not planner.route_active and hasattr(planner, "last_selected_goal")):
@@ -82,13 +75,8 @@ def process_frames(frame_queue, output_queue, stop_event):
                 dist_to_goal = np.hypot(robot_pos[0] - goal_cm[0], robot_pos[1] - goal_cm[1])
                 print(f"[DETECTION] Robot: {robot_pos}, Goal: {goal_cm}, Dist: {dist_to_goal}")
                 if dist_to_goal < config.ARRIVAL_THRESHOLD_CM:
-                    print("✅ [DETECTION] Robot reached goal, resuming dynamic pathfinding in 2s.")
-                    resume_dynamic_route_time = time.time() + 2  # <-- Set resume time
-
-        # After all logic, check if it's time to resume
-        if resume_dynamic_route_time is not None and time.time() >= resume_dynamic_route_time:
-            planner.dynamic_route = True
-            resume_dynamic_route_time = None
+                    print("✅ [DETECTION] Robot reached goal, resuming dynamic pathfinding.")
+                    planner.dynamic_route = True
 
         if planner.dynamic_route:
             # — YOLO inference —
@@ -144,8 +132,7 @@ def process_frames(frame_queue, output_queue, stop_event):
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,0,255), 2)
                         
             grid_utils.obstacles |= navigation.get_expanded_obstacles(new_obstacles)
-            
-            if planner.route_enabled and not planner.route_active and ball_positions_cm:
+            if not planner.route_active and ball_positions_cm:
                 planner.dynamic_route = False
                 planner.plan_and_execute(stop_event)
 
