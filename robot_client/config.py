@@ -45,7 +45,7 @@ MAX_SEGMENT_TIME = 10.0          # Max seconds to wait for a segment to complete
 MIN_SEGMENT_LENGHT = 8      # ignore close by turns
 
 START_POINT_CM = (20, 20)
-EXTRA_DISTANCE_TO_GOAL = 14
+EXTRA_DISTANCE_TO_GOAL = 13
 GOAL_A_CM      = (REAL_WIDTH_CM - EXTRA_DISTANCE_TO_GOAL, (REAL_HEIGHT_CM // 2))
 GOAL_B_CM      = None
 
@@ -55,7 +55,7 @@ GOAL_RANGE = {
 }
 
 # === Obstacle Expansion ===
-OBSTACLE_BUFFER_CM = 14
+OBSTACLE_BUFFER_CM = 15
 BUFFER_CELLS = int(np.ceil(OBSTACLE_BUFFER_CM / GRID_SPACING_CM))
 
 # === Detection Thresholds ===
