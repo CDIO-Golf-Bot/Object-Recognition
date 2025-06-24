@@ -73,9 +73,9 @@ def process_frames(frame_queue, output_queue, stop_event):
             robot_pos = planner.robot_position_cm
             if robot_pos is not None:
                 dist_to_goal = np.hypot(robot_pos[0] - goal_cm[0], robot_pos[1] - goal_cm[1])
-                print(f"[DETECTION] Robot: {robot_pos}, Goal: {goal_cm}, Dist: {dist_to_goal}")
+                #print(f"[DETECTION] Robot: {robot_pos}, Goal: {goal_cm}, Dist: {dist_to_goal}")
                 if dist_to_goal < config.ARRIVAL_THRESHOLD_CM:
-                    print("✅ [DETECTION] Robot reached goal, resuming dynamic pathfinding.")
+                    #print("✅ [DETECTION] Robot reached goal, resuming dynamic pathfinding.")
                     planner.dynamic_route = True
 
         if planner.dynamic_route:

@@ -49,7 +49,7 @@ def send_pose(x_cm, y_cm, theta_deg, timestamp = None) -> bool:
         pose["timestamp"] = float(timestamp)
     pose_msg = {"pose": pose}
     json_str = json.dumps(pose_msg)
-    print("📥 Pose → {}".format(json_str))
+    #print("📥 Pose → {}".format(json_str))
 
     ok = send_cmd(pose_msg)   # this closes & nulls socket if it fails
     if not ok:

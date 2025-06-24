@@ -285,7 +285,8 @@ def plan_route():
         balls,
         navigation.selected_goal
     )
-    if route_cm:
+    # Only execute if route has more than just start and goal
+    if route_cm and len(route_cm) > 2:
         turn_points = navigation.compress_path(grid_cells)
         turn_points_cm = navigation.grid_path_to_cm(turn_points)
         navigation.pending_route = turn_points_cm
@@ -293,7 +294,7 @@ def plan_route():
         print(f"Planned route: {len(turn_points_cm)} waypoints")
         return turn_points_cm, grid_cells
     else:
-        print("Route computation returned no waypoints.")
+        print("Route computation returned no waypoints or only goal.")
         return None, None
 
 def execute_route(route_cm, stop_event):

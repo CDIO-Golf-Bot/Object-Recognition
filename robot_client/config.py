@@ -87,5 +87,6 @@ PATH_COLOR              = (0, 255, 255)
 TEXT_COLOR              = (0, 255, 255)
 
 # === Misc ===
+DEBUG_TIME = 1.5        # debug pose every 1 second
 RANDOM_SEED = 42
 random.seed(RANDOM_SEED)
