@@ -33,7 +33,7 @@ PLANE_SCALE = CAMERA_HEIGHT / (CAMERA_HEIGHT - ARUCO_MARKER_HEIGHT)
 
 ARUCO_MARKER_ID = 100
 ARUCO_REFERENCE_POINT  = "center"
-ARUCO_OFFSET = 1.0      # cmc offset
+ARUCO_OFFSET = 2.0      # cmc offset
 
 # border‐buffer around the entire field (in cm → grid cells)
 BORDER_BUFFER_CM    = 12

@@ -132,7 +132,7 @@ def process_frames(frame_queue, output_queue, stop_event):
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,0,255), 2)
                         
             grid_utils.obstacles |= navigation.get_expanded_obstacles(new_obstacles)
-            if not planner.route_active and ball_positions_cm:
+            if planner.route_enabled and not planner.route_active and ball_positions_cm:
                 planner.dynamic_route = False
                 planner.plan_and_execute(stop_event)
 
