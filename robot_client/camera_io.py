@@ -117,6 +117,7 @@ def display_frames(output_queue, stop_event):
             navigation.selected_goal = 'B'
             print("Selected goal B")
         elif key == ord('s'):
+            planner.route_enabled = True
             planner.dynamic_route = False
             planner.plan_and_execute(stop_event)
             

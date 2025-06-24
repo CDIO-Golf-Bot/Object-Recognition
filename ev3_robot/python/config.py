@@ -17,15 +17,15 @@ MAX_CORRECTION  = 15.0
 ANGLE_TOLERANCE = 1.0
 LEFT_BIAS       = 0.0
 RIGHT_BIAS      = 0.0
-ANGLE_OVERSHOOT = 10.0      # turns if overshoot, for when missing target
+ANGLE_OVERSHOOT = 5.0      # turns if overshoot, for when missing target
 
 # ————————————————————————
 # SPEEDS
 # ————————————————————————
 TURN_SPEED_PCT  = 20
-DRIVE_SPEED_PCT = 25
+DRIVE_SPEED_PCT = 35
 FEED_FORWARD    = 2.0
-APPROACH_DISTANCE  = 1.0       # distance for when the robot slows down almost turn off lower than 5
+APPROACH_DISTANCE  = 0.1       # distance for when the robot slows down almost turn off lower than 5
 # ————————————————————————
 # AUX MOTOR
 # ————————————————————————

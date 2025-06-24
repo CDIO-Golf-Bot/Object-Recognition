@@ -32,8 +32,9 @@ pending_route = None
 selected_goal = 'A'
 robot_position_cm = None
 
-dynamic_route = True
-route_active = False
+dynamic_route = True        # starts camera reconition and route planning
+route_active = False        # routes keeps running
+route_enabled = False       # first start of route when pressing 's'
 
 def save_route_to_file(route_cm, filename="route.txt"):
     """
