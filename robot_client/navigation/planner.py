@@ -266,10 +266,6 @@ def compute_best_route(balls_list, goal_name):
 
 def draw_full_route(frame, ball_positions):
     global cached_route, full_grid_path, pending_route, last_ball_positions_cm, last_selected_goal, dynamic_route, selected_goal
-    """
-    Draw the route (grid_lines + robot + path) on the given frame,
-    with a small dot marking the robot's starting position.
-    """
     if cal.homography_matrix is None:
         return frame
 
@@ -282,32 +278,11 @@ def draw_full_route(frame, ball_positions):
         cv2.putText(frame, "ROBOT", (px_i - 20, py_i - 20),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
 
-    # --- Always draw the route being executed, if any ---
-    if pending_route:
-        route_cm = pending_route
-    else:
-        changed = (cached_route is None or
-                   utils.significant_change(ball_positions, last_ball_positions_cm) or
-                   last_selected_goal != selected_goal)
-        if dynamic_route and changed:
-            route_cm, grid_cells = compute_best_route(ball_positions, selected_goal)
-            cached_route, full_grid_path = route_cm, grid_cells
-        else:
-            route_cm = cached_route
-
-    if route_cm is None or len(route_cm) < 2:
-        return frame
-
-    # Overlay path
+    # Draw the full grid path the robot will follow
     overlay = frame.copy()
     total_cm = 0
-    grid_w = config.REAL_WIDTH_CM // config.GRID_SPACING_CM
-    grid_h = config.REAL_HEIGHT_CM // config.GRID_SPACING_CM
-    for p1, p2 in zip(route_cm[:-1], route_cm[1:]):
-        sc = gu.cm_to_grid_coords(*p1)
-        ec = gu.cm_to_grid_coords(*p2)
-        path = astar(sc, ec, grid_w, grid_h, gu.obstacles)
-        for prev, curr in zip(path, path[1:]):
+    if full_grid_path and len(full_grid_path) > 1:
+        for prev, curr in zip(full_grid_path, full_grid_path[1:]):
             x0, y0 = prev[0]*config.GRID_SPACING_CM, prev[1]*config.GRID_SPACING_CM
             x1, y1 = curr[0]*config.GRID_SPACING_CM, curr[1]*config.GRID_SPACING_CM
             p0 = cv2.perspectiveTransform(np.array([[[x0, y0]]], dtype="float32"), cal.homography_matrix)[0][0]
@@ -329,11 +304,12 @@ def plan_route():
         balls,
         navigation.selected_goal
     )
-    if route_cm:
+    if route_cm and grid_cells:
+        # Compress the full grid path to only corners/turns for robot commands
         turn_points = navigation.compress_path(grid_cells)
         turn_points_cm = navigation.grid_path_to_cm(turn_points)
-        navigation.pending_route = turn_points_cm
-        navigation.full_grid_path = grid_cells
+        navigation.pending_route = turn_points_cm  # For robot execution
+        navigation.full_grid_path = grid_cells     # For overlay drawing
         print(f"Planned route: {len(turn_points_cm)} waypoints")
         return turn_points_cm, grid_cells
     else:
