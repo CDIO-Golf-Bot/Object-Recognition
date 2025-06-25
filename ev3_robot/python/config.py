@@ -22,16 +22,16 @@ DISTANCE_TRESHHOLD = 8.0    # when we say we hit the target
 # ————————————————————————
 # SPEEDS
 # ————————————————————————
-TURN_SPEED_PCT  = 20
+TURN_SPEED_PCT  = 15
 DRIVE_SPEED_PCT = 35
 FEED_FORWARD    = 2.0
 APPROACH_DISTANCE  = 0.1       # distance for when the robot slows down almost turn off lower than 5
 # ————————————————————————
 # AUX MOTOR
 # ————————————————————————
-AUX_FORWARD_PCT = 20
-AUX_REVERSE_PCT = -25
-AUX_REVERSE_SEC = 5.0
+AUX_FORWARD_PCT = 25
+AUX_REVERSE_PCT = -30
+AUX_REVERSE_SEC = 8.0
 
 # Number of encoder ticks per full wheel revolution
 TICKS_PER_REV = 360  # or whatever your hardware uses
